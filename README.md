@@ -1,28 +1,16 @@
 # Post-Sale Insight OS
 
-Phase 0 foundation for the single-user MVP. Read [AGENTS.md](AGENTS.md) and the canonical product documents before making changes. This phase contains navigation placeholders and a relational schema, **not product workflows**.
+A single-user workspace for preserving manually supplied conversations and capturing approved learning. Read [AGENTS.md](AGENTS.md) and the canonical product documents before making changes. Phase 1 implements **Post Workspace** only; all other routes remain Phase 0 placeholders.
 
-## Requirements and installation
+## Setup
 
-Use Node.js 24 LTS (`nvm use` with the included `.nvmrc`) and npm. Install locked dependencies:
+Use Node.js 24 LTS (`nvm use`) and PostgreSQL 17+. Install locked dependencies:
 
 ```sh
 npm ci
 ```
 
-In cloud environments where the home directory is read-only, use `npm ci --cache /tmp/post-sale-npm-cache`. Use the existing isolated checkout; no additional worktree is needed.
-
-## Local development
-
-```sh
-npm run dev
-```
-
-Vite prints the local address. The browser app runs without credentials or a database connection. The six placeholder routes are `/` (Today), `/post-workspace`, `/insights`, `/connections`, `/relationships`, and `/weekly-review`. Each renders within the shared navigation shell. Unknown URLs render a not-found screen. For remote development, add `-- --host 0.0.0.0` only in an appropriately restricted environment.
-
-## Database and migrations
-
-Use PostgreSQL 17 or later, locally or through a provider supporting standard PostgreSQL. For example, with Docker installed:
+For a local PostgreSQL instance with Docker:
 
 ```sh
 docker run --name post-sale-postgres \
@@ -31,21 +19,67 @@ docker run --name post-sale-postgres \
   -p 127.0.0.1:5432:5432 \
   -v post-sale-postgres-data:/var/lib/postgresql/data \
   -d postgres:17
-# Wait until this succeeds:
+# Wait until ready:
 docker exec post-sale-postgres pg_isready -U postgres -d post_sale_insight_os
 cp .env.example .env
 npm run db:migrate
+npm run dev
 ```
 
-The example password is for local development only. If using an existing PostgreSQL installation, create an empty database and set `DATABASE_URL` in ignored `.env` or your process environment instead. `DATABASE_URL` is used only by Node migration tooling. Never prefix credentials with `VITE_`: Vite-prefixed values are public browser configuration. Do not commit `.env` or real credentials. Hosted database connections must use the provider's verified TLS configuration; do not disable certificate validation.
+If PostgreSQL is already installed, create an empty database and configure `DATABASE_URL` in `.env` instead. Do not overwrite an existing `.env`. The example password is for local development only; use your own credentials elsewhere and retain verified TLS for hosted PostgreSQL. The API automatically creates the configured owner's `users` row after migrations; it does not seed conversations, people, or Insights.
 
-Migrations live in `database/migrations`, run in filename order, and are recorded with SHA-256 checksums in `schema_migrations`. Rerunning `npm run db:migrate` is safe: applied migrations are skipped, changed applied files are rejected, and each new migration and journal entry commit atomically. The PostgreSQL runner holds a session advisory lock to serialize concurrent runs. Add a new zero-padded numbered SQL file for each schema change; never edit an applied migration. There is no automatic destructive down/reset command. Back up data before migration and use an explicit forward correction when needed.
+`npm run dev` starts the API on loopback port 3001 and Vite on loopback port 5173. Open the local Vite address and choose **Post Workspace**. Vite proxies `/api` to the Node server. Both processes stop together. Use the existing isolated checkout; no additional worktree is needed. In cloud environments with a read-only home directory, use `npm ci --cache /tmp/post-sale-npm-cache`.
 
-The schema covers all entities in [DATA-MODEL.md](DATA-MODEL.md), plus `insight_lineage` for synthesis sources. `insight_sources` links insights to original conversations; lineage links synthesized insights to source insights; `insight_connections` represents the canonical relationship vocabulary independently. Foreign keys restrict deletion of referenced evidence, and composite foreign keys prevent cross-owner links. Original post/comments remain text in source records; no derived edits update them. Seed values use the Five Seeds; themes are flexible text. Derived records carry creation method and confirmation separately; AI suggestions default to unconfirmed. Event/action/content vocabularies remain open until their workflow is specified. Optional attachment storage is deferred; no external service is required for core text records.
+## Configuration and local access boundary
 
-Phase 0 provides no database API, auth UI, AI calls, or user provisioning workflow. Create no real user data through an exposed database/browser connection. Ownership foreign keys are not authorization: auth and access policies must be implemented before exposing persistence. The application does not yet enforce workflow rules such as one open relationship action or valid multi-level synthesis ancestry; those belong with their approved future workflows.
+All configuration is documented in `.env.example`:
 
-## Validation
+| Variable            | Purpose                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`      | Server-only PostgreSQL connection string; also used by migrations.                                                                                                                    |
+| `WORKSPACE_USER_ID` | One stable UUID for your local workspace. The server sets ownership; never accepted from the browser. Changing this UUID selects a different owner, so retain it to reopen your data. |
+| `AI_MODE`           | `unavailable` (default) or `stub` (explicit development preview). No real provider is integrated.                                                                                     |
+| `PORT`              | API/production port, default 3001. Keep 3001 when using the supplied Vite dev proxy.                                                                                                  |
+| `APP_ORIGIN`        | Exact allowed development origin; default `http://127.0.0.1:5173`. Production same-origin requests are allowed automatically.                                                         |
+
+Never prefix credentials with `VITE_`; those values are public browser configuration. `.env` is ignored. No database or AI secrets are sent to the browser, and this phase requires no AI credentials.
+
+This is a **local single-user API**, not a remotely authenticated service. The API and Vite bind only to loopback. The API checks Host/Origin, rejects cross-site requests, and requires JSON writes. Do not expose it through a public proxy or port forward. Authenticated remote deployment requires a separate access-policy decision; no authentication product UX or multi-user feature is introduced here.
+
+## Post Workspace flow
+
+1. Paste the Original Post. Optionally expand Relevant Comments and provenance/person details. A URL is metadata only; it is never fetched. A person name is needed only when linking person metadata.
+2. **Save source** independently of any assistance or Insight. Post/comments are preserved as supplied, including whitespace and clipboard line endings; later edits before initial save preserve untouched line endings. Saved source fields are locked, and no source-update API exists.
+3. Write your response manually, or explicitly enable `AI_MODE=stub` and restart to review deterministic development-preview suggestions. The stub is labeled as such, uses a source excerpt, and does not select seeds or claim model analysis. Its revision controls demonstrate the future interface; they are templates, not real AI. Edit and **Copy response**, then post manually on LinkedIn. Nothing is posted automatically.
+4. Write a manual Insight or explicitly select the development proposal. Edit its title/summary and optional takeaways/seeds/themes. Nothing becomes durable knowledge until **Approve & save Insight** is clicked. Approval saves a distinct Insight plus `insight_sources` provenance, in a separate transaction from source capture.
+5. Refresh the conversation URL or use **Reopen saved conversations** to see the exact saved source, optional person metadata and approved linked Insights. **New conversation** starts another source. No full Insights Library or Relationships workflow is implemented.
+
+Manual and development-preview approvals use `creation_method=user` and `user_confirmed=true`; the stub is not real AI, so it must not be attributed as AI-generated. Existing `ai_suggested`/`ai_then_edited` schema values remain intact for a future approved integration. Client-supplied creation methods and ownership are rejected.
+
+Source saves and Insight approvals use client-generated IDs for safe retries; matching retries do not create duplicate records. A changed retry returns a conflict rather than pretending edits were saved. Failed assistance or persistence requests keep your current edits in the workspace. Draft analysis, comments and unapproved Insights are session-local, not durable history: save source and approve an Insight before leaving if you want to retain them. Approved records reopen after refresh; source and approved Insights cannot be overwritten through this Phase 1 API.
+
+## API and AI boundary
+
+- `GET /api/status`: development AI mode only, no secrets.
+- `GET /api/conversations`: this owner's conversation previews for reopening.
+- `POST /api/conversations`: `{ id, source: { originalText, relevantComments, sourceUrl, person? } }`.
+- `GET /api/conversations/:id`: exact source, optional person, approved linked Insights.
+- `POST /api/conversations/:id/insights`: `{ id, title, summary, takeaways, seeds, themes, confirmed: true }`.
+- `POST /api/assist`: source, optional saved conversation ID, current comment and revision mode; returns validated, unconfirmed suggestion fields. Saved-source requests use server-read source and approved linked knowledge rather than trusting client replacements.
+
+The provider-neutral `Assistant.run` boundary in `server/ai.ts` accepts exact source and approved linked knowledge, and returns seeds/themes with rationale, distinctions/questions, an editable comment and an Insight proposal. This PR contains only unavailable and deterministic-stub implementations. There is no production provider selection, HTTP adapter or API key setting. A future real provider must remain server-side, validate structured output, follow `AI-BEHAVIOR.md`'s grounding hierarchy, and retain explicit approval and trustworthy creation-method attribution without changing source or Insight domain records.
+
+## Database migrations
+
+`database/migrations/001_initial.sql` remains unchanged. Phase 1 requires no schema migration. The existing schema covers all approved entities, including source/Insight separation, `insight_sources`, independent connections and synthesis lineage. Only people, source conversations and approved Insights plus their seed/theme/provenance joins are used by this phase.
+
+```sh
+npm run db:migrate
+```
+
+Migrations run in filename order, under a PostgreSQL session advisory lock. Each migration and its SHA-256 journal entry commit atomically. Reruns skip matching applied migrations; checksum drift is rejected. Add new numbered SQL files for future changes instead of editing applied files. There is no automatic destructive reset. Back up data before migrations and use explicit forward corrections. Source/person creation and Insight/provenance creation each have their own database transaction. Ownership is included in every workflow query and relationship.
+
+## Checks and tests
 
 ```sh
 npm run lint
@@ -53,27 +87,40 @@ npm run format:check
 npm run typecheck
 npm test
 npm run build
-# All of the above:
+# All five:
 npm run check
 ```
 
-`npm run format` applies Prettier. Tests exercise all six routes, navigation and unknown URLs, and run the actual SQL migrations using test-only embedded PostgreSQL (PGlite). Database tests cover reapplication, rollback, checksum drift, exact source preservation, provenance, synthesis lineage, connection independence, and relational constraints. They require no Docker or external secrets. PGlite is not a substitute for testing provider authentication, TLS or network connectivity; `npm run db:migrate` validates that connection when configured. GitHub Actions runs the same checks on pushes and pull requests, and applies/reapplies the migration runner against a PostgreSQL 17 service.
+`npm run format` applies Prettier. Vitest includes shared-shell/navigation checks, PostgreSQL schema/migration tests, and actual HTTP API/domain tests backed by embedded PostgreSQL (PGlite, test-only). These tests require no Docker, production AI or credentials.
 
-## Production build
+Browser acceptance tests exercise the built application and real PostgreSQL. Use a **disposable test database**, apply migrations to it and export its `DATABASE_URL` before running; the suite writes test data under fixed test-owner IDs. It does not reset or delete your data. Do not point it at a real personal or production database.
+
+```sh
+# DATABASE_URL must refer to your disposable, already migrated test database.
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
+
+Playwright starts two local production servers on ports 3101/3102 for development-stub and unavailable modes. It covers exact source/comments/person preservation, response editing/revision/copy, proposal approval and provenance, refresh/reopen, manual fallback, failure retention and browser-secret exclusion. If using a preinstalled Chromium, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable (e.g. `/usr/bin/chromium`); otherwise Playwright uses its pinned browser. On Linux machines without browser libraries, `npx playwright install --with-deps chromium` installs supported dependencies. GitHub Actions runs lint, formatting, types, unit/API/schema tests, production build, migration/reapplication against PostgreSQL 17, and browser acceptance tests.
+
+## Production bundle and local server
 
 ```sh
 npm run build
-npm run preview
+npm start
 ```
 
-Build output is `dist/`. Preview serves the production bundle for local smoke checks; it is not a production hosting service. A deployed static host must serve `index.html` for application paths so direct route loads work. Hosting and production authentication are not selected in Phase 0.
+The Node server serves `dist/` and the same local API, including direct route loads. `npm run preview` serves only the static bundle and is not the full persistence workflow; use `npm start` for application validation. Production hosting and remote authentication are not selected in this phase.
 
 ## Structure and scope
 
-- `src/app/`: shared shell, routes, styles, route tests.
-- `src/test/`: shared test setup.
-- `database/migrations/`: append-only PostgreSQL schema migrations.
-- `database/schema.test.js`: executable migration/integrity tests.
+- `src/app/`: shared shell and unchanged placeholder routes.
+- `src/workspace/`: Phase 1 workspace UI and API client.
+- `src/shared/`: credential-free request/output schemas and types.
+- `server/`: local API, PostgreSQL transactions and provider-neutral development assistant.
+- `database/`: original SQL migration and integrity tests.
 - `scripts/`: server-only migration tooling.
+- `e2e/`: real-browser acceptance checks against PostgreSQL.
 
-See [DECISIONS.md](DECISIONS.md) for technical choices. Phase 1 — Post Workspace is the recommended next slice **after Phase 0 review and explicit approval**; it has not been started.
+See [DECISIONS.md](DECISIONS.md) for material choices. No Phase 2+ workflow is included. The next slice requires review and explicit approval.

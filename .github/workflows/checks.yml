@@ -1,4 +1,4 @@
-name: Foundation checks
+name: Application checks
 on:
   push:
   pull_request:
@@ -34,3 +34,9 @@ jobs:
         run: |
           npm run db:migrate
           npm run db:migrate
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Post Workspace browser acceptance tests
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/post_sale_insight_os
+        run: npm run test:e2e
