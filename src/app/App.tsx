@@ -1,5 +1,7 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 
+import { PostWorkspace } from "../workspace/PostWorkspace";
+
 const screens = [
   { path: "/", title: "Today" },
   { path: "/post-workspace", title: "Post Workspace" },
@@ -41,7 +43,13 @@ export function App() {
             <Route
               key={path}
               path={path}
-              element={<Placeholder title={title} />}
+              element={
+                path === "/post-workspace" ? (
+                  <PostWorkspace />
+                ) : (
+                  <Placeholder title={title} />
+                )
+              }
             />
           ))}
           <Route

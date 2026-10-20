@@ -8,6 +8,10 @@ export default tseslint.config(
   { ignores: ["dist/**", "node_modules/**", "coverage/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    files: ["server/**/*.test.ts"],
+    rules: { "@typescript-eslint/no-explicit-any": "off" },
+  },
   { languageOptions: { globals: { ...globals.browser, ...globals.node } } },
   {
     files: ["src/**/*.{ts,tsx}"],

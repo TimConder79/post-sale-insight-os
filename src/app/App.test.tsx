@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { App } from "./App";
 
 const routes = [
@@ -12,7 +12,13 @@ const routes = [
   ["/relationships", "Relationships"],
   ["/weekly-review", "Weekly Review"],
 ];
-describe("Phase 0 routes", () => {
+describe("Application routes", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify([]))),
+    );
+  });
   it.each(routes)("renders %s in the shared shell", (path, title) => {
     render(
       <MemoryRouter initialEntries={[path]}>
@@ -29,7 +35,8 @@ describe("Phase 0 routes", () => {
       "aria-current",
       "page",
     );
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    if (path !== "/post-workspace")
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
   it("navigates between workspaces", async () => {
     const user = userEvent.setup();

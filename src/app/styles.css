@@ -70,3 +70,123 @@ h1 {
 .skip-link:focus {
   top: 0.5rem;
 }
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+  align-items: start;
+}
+.workspace-panel {
+  background: white;
+  border: 1px solid #cbd4cc;
+  border-radius: 0.5rem;
+  padding: 1.2rem;
+  min-width: 0;
+}
+h2 {
+  margin-top: 0;
+  font-size: 1.2rem;
+}
+label {
+  display: block;
+  margin: 1rem 0;
+  font-weight: 600;
+}
+label span {
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+input,
+textarea {
+  display: block;
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #71887d;
+  border-radius: 0.25rem;
+  font: inherit;
+  color: inherit;
+  background: white;
+}
+textarea {
+  resize: vertical;
+  font-size: 0.95rem;
+}
+fieldset {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+}
+fieldset:disabled input,
+fieldset:disabled textarea {
+  color: #233c36;
+  background: #f6f7f3;
+  opacity: 1;
+}
+button {
+  font: inherit;
+  background: #233c36;
+  color: white;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #233c36;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  margin: 0.25rem 0.25rem 0.25rem 0;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #a35719;
+  outline-offset: 3px;
+}
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+}
+summary {
+  cursor: pointer;
+  margin: 0.75rem 0;
+}
+.suggestion {
+  background: #f3f5ed;
+  padding: 0.75rem;
+  margin: 1rem 0;
+}
+.error {
+  color: #8d261c;
+  background: #fff0ed;
+  padding: 1rem;
+}
+.preserve-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+code,
+small {
+  overflow-wrap: anywhere;
+}
+.checkbox {
+  font-weight: 400;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.checkbox input {
+  width: auto;
+}
+article {
+  border-top: 1px solid #cbd4cc;
+  margin-top: 1rem;
+}
+@media (max-width: 1000px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}

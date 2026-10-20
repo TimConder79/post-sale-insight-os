@@ -14,5 +14,5 @@
     "noUnusedParameters": true,
     "types": ["vite/client", "@testing-library/jest-dom", "node"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts", "server", "playwright.config.ts"]
 }
