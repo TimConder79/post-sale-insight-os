@@ -5,13 +5,13 @@ Build the smallest useful version of Post-Sale Insight OS that supports the comp
 
 ## Read first
 Before implementation or product changes, read:
-1. `docs/PRODUCT.md`
-2. `docs/PRODUCT-SPEC.md`
-3. `docs/DECISIONS.md`
-4. `reference/FIVE-SEEDS.md`
-5. `reference/POST-SALE-OS.md`
+1. `PRODUCT.md`
+2. `PRODUCT-SPEC.md`
+3. `DECISIONS.md`
+4. `FIVE-SEEDS.md`
+5. `POST-SALE-OS.md`
 
-For AI behavior, also read `docs/AI-BEHAVIOR.md`.
+For AI behavior, also read `AI-BEHAVIOR.md`.
 
 ## Non-negotiable product rules
 - Original source text/comments are never silently rewritten by AI.
@@ -28,7 +28,7 @@ For AI behavior, also read `docs/AI-BEHAVIOR.md`.
 ## Engineering behavior
 - Prefer simple, reversible implementations.
 - Do not expand scope without an explicit product decision.
-- For material behavior changes, update `docs/DECISIONS.md` in the same PR.
+- For material behavior changes, update `DECISIONS.md` in the same PR.
 - Keep acceptance criteria close to the implementation task.
 - Preserve user data on AI/API failure.
 - Use structured AI outputs where practical.
