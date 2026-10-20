@@ -1,0 +1,17 @@
+node_modules
+dist
+coverage
+package-lock.json
+Product_Spec_v1.docx
+# Existing canonical documents retain their original formatting.
+AGENTS.md
+AI-BEHAVIOR.md
+ARCHITECTURE.md
+CONTENT-STRATEGY.md
+DATA-MODEL.md
+FIVE-SEEDS.md
+POST-SALE-OS.md
+PRODUCT-SPEC.md
+PRODUCT.md
+ROADMAP.md
+UX.md
