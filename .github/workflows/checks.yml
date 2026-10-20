@@ -1,0 +1,36 @@
+name: Foundation checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: post_sale_insight_os
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d post_sale_insight_os"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Apply and reapply PostgreSQL migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/post_sale_insight_os
+        run: |
+          npm run db:migrate
+          npm run db:migrate

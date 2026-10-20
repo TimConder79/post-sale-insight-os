@@ -1,0 +1,72 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #233c36;
+  background: #f6f7f3;
+  line-height: 1.6;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+.app-shell {
+  max-width: 80rem;
+  margin: auto;
+}
+header {
+  padding: 2rem;
+  border-bottom: 1px solid #cbd4cc;
+}
+.brand {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0 0 1.5rem;
+}
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+nav a {
+  color: inherit;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.25rem;
+  text-decoration: none;
+}
+nav a[aria-current="page"] {
+  background: #233c36;
+  color: #fff;
+}
+a:hover {
+  text-decoration: underline;
+}
+a:focus-visible {
+  outline: 3px solid #a35719;
+  outline-offset: 3px;
+}
+main {
+  padding: clamp(1.5rem, 5vw, 4rem);
+}
+h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.2;
+  margin: 0.5rem 0 1.5rem;
+}
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.75rem;
+}
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -5rem;
+  background: white;
+  padding: 0.5rem;
+  color: inherit;
+}
+.skip-link:focus {
+  top: 0.5rem;
+}
