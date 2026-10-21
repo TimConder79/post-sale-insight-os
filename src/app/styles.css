@@ -267,3 +267,83 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+.connections-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+  margin: 1.5rem 0;
+}
+.connections-compose select {
+  width: 100%;
+}
+.connections-compose a,
+.connection-list a,
+.synthesis-form a {
+  color: #233c36;
+  overflow-wrap: anywhere;
+}
+.candidate-list {
+  list-style: none;
+  padding: 0;
+  max-height: 32rem;
+  overflow: auto;
+}
+.candidate-list li {
+  border-bottom: 1px solid #cbd4cc;
+  padding: 0.75rem 0;
+}
+.candidate-list p {
+  margin: 0.5rem 0;
+}
+.connection-list {
+  list-style: none;
+  padding: 0;
+}
+.connection-list li {
+  margin: 1rem 0;
+}
+.connection-map {
+  height: 36rem;
+  width: 100%;
+  border: 1px solid #71887d;
+  margin: 1rem 0;
+  background: #f7f9f4;
+}
+.map-node-label a {
+  color: #233c36;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.map-node-label small {
+  display: block;
+  margin-top: 0.5rem;
+}
+.synthesis-form {
+  margin: 1.5rem 0;
+}
+.synthesis-form li {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 900px) {
+  .connections-compose {
+    grid-template-columns: 1fr;
+  }
+}
+.relation-label {
+  position: absolute;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid #cbd4cc;
+  border-radius: 0.2rem;
+  background: white;
+  color: #233c36;
+  font-size: 0.8rem;
+  pointer-events: all;
+}
+.connection-map .react-flow__handle {
+  opacity: 0;
+}

@@ -1,6 +1,7 @@
 import { WorkspaceError } from "./errors.ts";
 export { WorkspaceError } from "./errors.ts";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
+import { ConnectionsStore } from "./connections.ts";
 import { LibraryStore } from "./library.ts";
 import { randomUUID } from "node:crypto";
 import { insightFields } from "../src/shared/workspace.ts";
@@ -43,6 +44,9 @@ export class WorkspaceStore {
     private db: Database,
     private owner: string,
   ) {}
+  connections() {
+    return new ConnectionsStore(this.db, this.owner);
+  }
   library() {
     return new LibraryStore(this.db, this.owner);
   }

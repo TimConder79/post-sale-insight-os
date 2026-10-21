@@ -1,3 +1,4 @@
+import { ConnectionsWorkspace } from "../connections/ConnectionsWorkspace";
 import { NavLink, Route, Routes } from "react-router-dom";
 
 import { InsightsLibrary, InsightsFuture } from "../library/InsightsLibrary";
@@ -50,7 +51,7 @@ export function App() {
                 ) : path === "/insights" ? (
                   <InsightsLibrary />
                 ) : path === "/connections" ? (
-                  <InsightsFuture title="Connections" />
+                  <ConnectionsWorkspace />
                 ) : (
                   <Placeholder title={title} />
                 )

@@ -213,9 +213,12 @@ test("empty, partial metadata and database failure states are clear and retryabl
     .getByRole("link", { name: "Connections", exact: true })
     .click();
   await expect(
-    page.getByText(
-      "Connections is planned for a later phase. The Insights Library is available now.",
-      { exact: true },
-    ),
+    page.getByRole("heading", { name: "Connections", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "List", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Map", exact: true }),
   ).toBeVisible();
 });

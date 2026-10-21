@@ -1,3 +1,4 @@
+import { connectionInput, synthesisInput } from "../src/shared/connections.ts";
 import { libraryQuery } from "../src/shared/library.ts";
 import express from "express";
 import type { ErrorRequestHandler } from "express";
@@ -58,6 +59,24 @@ export function createApp(
     },
     express.json({ limit: "1mb" }),
   );
+  app.get("/api/connections", async (_req, res) => {
+    res.json(await store.connections().list());
+  });
+  app.post("/api/connections", async (req, res) => {
+    res
+      .status(201)
+      .json(await store.connections().create(connectionInput.parse(req.body)));
+  });
+  app.delete("/api/connections/:id", async (req, res) => {
+    res.json(await store.connections().remove(z.uuid().parse(req.params.id)));
+  });
+  app.post("/api/syntheses", async (req, res) => {
+    res
+      .status(201)
+      .json(
+        await store.connections().synthesize(synthesisInput.parse(req.body)),
+      );
+  });
   app.get("/api/insights", async (req, res) => {
     res.json(await store.library().list(libraryQuery.parse(req.query)));
   });
