@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClipboardEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
   seeds,
   sourceFields,
@@ -86,6 +86,8 @@ function pasteExact(
 
 export function PostWorkspace() {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const libraryReturn: unknown = location.state?.libraryReturn;
   const selectedId = params.get("conversation");
   const [source, setSource] = useState<SourceInput>(emptySource);
   const [saved, setSaved] = useState<Conversation>();
@@ -352,6 +354,10 @@ export function PostWorkspace() {
 
   return (
     <section aria-labelledby="workspace-title">
+      {typeof libraryReturn === "string" &&
+        libraryReturn.startsWith("/insights?") && (
+          <Link to={libraryReturn}>Back to selected Insight</Link>
+        )}
       <h1 id="workspace-title">Post Workspace</h1>
       <p>
         Paste what they said. Shape your response. Capture what you learned.

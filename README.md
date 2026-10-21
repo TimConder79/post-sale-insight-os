@@ -1,6 +1,6 @@
 # Post-Sale Insight OS
 
-A single-user workspace for preserving manually supplied conversations and capturing approved learning. Read [AGENTS.md](AGENTS.md) and the canonical product documents before making changes. Phase 1 implements **Post Workspace** only; all other routes remain Phase 0 placeholders.
+A single-user workspace for preserving manually supplied conversations and capturing approved learning. Read [AGENTS.md](AGENTS.md) and the canonical product documents before making changes. Phase 1 implements **Post Workspace**; Phase 2 adds the **Insights Library**. Other workflows remain placeholders.
 
 ## Setup
 
@@ -58,8 +58,18 @@ Manual and development-preview approvals use `creation_method=user` and `user_co
 
 Source saves and Insight approvals use client-generated IDs for safe retries; matching retries do not create duplicate records. A changed retry returns a conflict rather than pretending edits were saved. Failed assistance or persistence requests keep your current edits in the workspace. Analysis and unapproved Insights remain session-local. Responses persist only through **Save response**, including an intentional empty response to clear the saved text. Unsaved response edits are marked, and reload/close or workspace conversation switching warns before discarding them; browser history navigation does not autosave drafts. The latest explicit response save wins across tabs; no revision history is introduced. Save failures retain current edits and the previous durable response. Source and approved Insights cannot be overwritten through this Phase 1 API.
 
+## Insights Library (Phase 2)
+
+Open **Insights Library** to browse this workspace owner's approved Insights. Title and Insight text are primary; lists also show Seeds (or **Unclassified**), available source people/companies, creation date and any existing favorite flag. Search matches title, Insight text, notes and source person/company case-insensitively as literal text. Combine search with a canonical Seed or Unclassified filter. Zero Seeds is valid and is not written back as a classification.
+
+Select an Insight to see its text, optional collapsed Takeaways, notes and a separate source-provenance section. Original source text and relevant comments are read-only and unchanged; missing person/company/URL metadata is supported. **Open source in Post Workspace** follows `insight_sources`; **Back to selected Insight** restores the Library selection and filters. Search/filter/selection live in the Library URL. Selecting a detail moves keyboard focus to its heading so it is reachable when panels stack on mobile.
+
+The Library is read-only: it uses existing records and schema with no migration or data re-entry. Connections and Themes navigation lead to clearly labeled future states. No Insight editing, new favorite controls, Themes behavior, graph, synthesis or other later workflow is implemented. The small-MVP list is not paginated; detailed source text is requested only when an Insight is selected. Automated baseline fixtures are synthetic and confined to test databases; no production-like user records are seeded or recreated.
+
 ## API and AI boundary
 
+- `GET /api/insights?q=...&seed=...`: approved, owner-scoped Library list; optional canonical Seed or `Unclassified`.
+- `GET /api/insights/:id`: approved, owner-scoped detail and exact source provenance; unavailable or foreign records return 404.
 - `GET /api/status`: development AI mode only, no secrets.
 - `GET /api/conversations`: this owner's conversation previews for reopening.
 - `POST /api/conversations`: `{ id, source: { originalText, relevantComments, sourceUrl, person? } }`.
@@ -118,10 +128,11 @@ The Node server serves `dist/` and the same local API, including direct route lo
 
 - `src/app/`: shared shell and unchanged placeholder routes.
 - `src/workspace/`: Phase 1 workspace UI and API client.
+- `src/library/`: Phase 2 Library and future-state navigation.
 - `src/shared/`: credential-free request/output schemas and types.
 - `server/`: local API, PostgreSQL transactions and provider-neutral development assistant.
 - `database/`: original SQL migration and integrity tests.
 - `scripts/`: server-only migration tooling.
 - `e2e/`: real-browser acceptance checks against PostgreSQL.
 
-See [DECISIONS.md](DECISIONS.md) for material choices. No Phase 2+ workflow is included. The next slice requires review and explicit approval.
+See [DECISIONS.md](DECISIONS.md) for material choices. No Phase 3+ workflow is included. The next slice requires review and explicit approval.
