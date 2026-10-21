@@ -1,4 +1,7 @@
+import { WorkspaceError } from "./errors.ts";
+export { WorkspaceError } from "./errors.ts";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
+import { LibraryStore } from "./library.ts";
 import { randomUUID } from "node:crypto";
 import { insightFields } from "../src/shared/workspace.ts";
 import type {
@@ -35,19 +38,14 @@ export function postgresDatabase(pool: Pool): Database {
     },
   };
 }
-export class WorkspaceError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 export class WorkspaceStore {
   constructor(
     private db: Database,
     private owner: string,
   ) {}
+  library() {
+    return new LibraryStore(this.db, this.owner);
+  }
   async initialize() {
     await this.db.query(
       "INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING",

@@ -1,5 +1,6 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 
+import { InsightsLibrary, InsightsFuture } from "../library/InsightsLibrary";
 import { PostWorkspace } from "../workspace/PostWorkspace";
 
 const screens = [
@@ -31,7 +32,7 @@ export function App() {
         <p className="brand">Post-Sale Insight OS</p>
         <nav aria-label="Primary navigation">
           {screens.map(({ path, title }) => (
-            <NavLink key={path} to={path} end>
+            <NavLink key={path} to={path} end={path !== "/insights"}>
               {title}
             </NavLink>
           ))}
@@ -46,12 +47,20 @@ export function App() {
               element={
                 path === "/post-workspace" ? (
                   <PostWorkspace />
+                ) : path === "/insights" ? (
+                  <InsightsLibrary />
+                ) : path === "/connections" ? (
+                  <InsightsFuture title="Connections" />
                 ) : (
                   <Placeholder title={title} />
                 )
               }
             />
           ))}
+          <Route
+            path="/insights/themes"
+            element={<InsightsFuture title="Themes" />}
+          />
           <Route
             path="*"
             element={

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -31,11 +31,12 @@ describe("Application routes", () => {
     expect(
       screen.getByRole("navigation", { name: "Primary navigation" }),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: title })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    if (path !== "/post-workspace")
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Primary navigation" }),
+      ).getByRole("link", { name: title }),
+    ).toHaveAttribute("aria-current", "page");
+    if (path !== "/post-workspace" && path !== "/insights")
       expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
   it("navigates between workspaces", async () => {

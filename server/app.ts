@@ -1,3 +1,4 @@
+import { libraryQuery } from "../src/shared/library.ts";
 import express from "express";
 import type { ErrorRequestHandler } from "express";
 import { z } from "zod";
@@ -57,6 +58,12 @@ export function createApp(
     },
     express.json({ limit: "1mb" }),
   );
+  app.get("/api/insights", async (req, res) => {
+    res.json(await store.library().list(libraryQuery.parse(req.query)));
+  });
+  app.get("/api/insights/:id", async (req, res) => {
+    res.json(await store.library().get(z.uuid().parse(req.params.id)));
+  });
   app.get("/api/status", (_req, res) => {
     res.json({ aiMode: assistant.mode });
   });

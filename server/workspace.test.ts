@@ -118,6 +118,158 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+async function libraryFixtures() {
+  const ids: string[] = [];
+  const conversations: string[] = [];
+  const distribution = [
+    "Progression",
+    "Progression",
+    "Economics",
+    "Predictability",
+    null,
+  ] as const;
+  for (const [index, seed] of distribution.entries()) {
+    const conversation = await save(
+      index === 0
+        ? {
+            person: {
+              name: "Sangram (fixture)",
+              role: "",
+              company: "Fixture company",
+              linkedinUrl: "",
+            },
+          }
+        : index === 4
+          ? {
+              person: {
+                name: "Tony Muise (fixture)",
+                role: "",
+                company: "",
+                linkedinUrl: "",
+              },
+              sourceUrl: "",
+              relevantComments: "",
+            }
+          : { sourceUrl: "" },
+    );
+    const id = randomUUID();
+    ids.push(id);
+    conversations.push(conversation.id);
+    await store.approve(conversation.id, id, {
+      title: `Library fixture ${index}`,
+      summary: `Interpretation ${index}, not a source summary.`,
+      takeaways: index === 0 ? ["Optional secondary takeaway"] : [],
+      seeds: seed ? [seed] : [],
+      themes: [],
+    });
+  }
+  return { ids, conversations };
+}
+describe("Insights Library API", () => {
+  it("retrieves five existing approved records and filters the documented seed distribution", async () => {
+    await start();
+    const { ids } = await libraryFixtures();
+    const list = await request("/api/insights");
+    expect(list.status).toBe(200);
+    expect(list.body).toHaveLength(5);
+    expect(list.body.map((item: any) => item.id).sort()).toEqual(
+      [...ids].sort(),
+    );
+    for (const [seed, count] of [
+      ["Progression", 2],
+      ["Economics", 1],
+      ["Predictability", 1],
+      ["Unclassified", 1],
+    ] as const)
+      expect((await request(`/api/insights?seed=${seed}`)).body).toHaveLength(
+        count,
+      );
+    const unclassified = (await request("/api/insights?seed=Unclassified"))
+      .body[0];
+    expect(unclassified.id).toBe(ids[4]);
+    expect(unclassified.seeds).toEqual([]);
+    expect(unclassified.people[0].name).toBe("Tony Muise (fixture)");
+    expect(
+      (await request("/api/insights?q=SANGRAM&seed=Progression")).body[0].id,
+    ).toBe(ids[0]);
+    expect(
+      (await request("/api/insights?q=Interpretation%203")).body[0].id,
+    ).toBe(ids[3]);
+    expect((await request("/api/insights?q=no-match")).body).toEqual([]);
+    expect((await request("/api/insights?seed=Invalid")).status).toBe(400);
+  });
+  it("returns exact provenance, secondary optional fields, and partial metadata without changing data", async () => {
+    await start();
+    const { ids, conversations } = await libraryFixtures();
+    await db.query(
+      "UPDATE insights SET notes='A personal note',favorite=true WHERE id=$1",
+      [ids[0]],
+    );
+    const first = (await request(`/api/insights/${ids[0]}`)).body;
+    expect(first.notes).toBe("A personal note");
+    expect(first.favorite).toBe(true);
+    expect(first.takeaways).toEqual(["Optional secondary takeaway"]);
+    expect(first.sources[0]).toMatchObject({
+      id: conversations[0],
+      originalText: exact,
+      relevantComments: source.relevantComments,
+      sourceUrl: source.sourceUrl,
+      person: { name: "Sangram (fixture)", company: "Fixture company" },
+    });
+    const partial = (await request(`/api/insights/${ids[4]}`)).body;
+    expect(partial.takeaways).toEqual([]);
+    expect(partial.sources[0].sourceUrl).toBe("");
+    const noPerson = (await request(`/api/insights/${ids[1]}`)).body;
+    expect(noPerson.sources[0].person).toBeNull();
+    expect((await store.get(conversations[0])).originalText).toBe(exact);
+    expect((await request(`/api/insights/${randomUUID()}`)).status).toBe(404);
+  });
+  it("isolates owners and excludes unconfirmed suggestions from both list and detail", async () => {
+    await start();
+    const { ids } = await libraryFixtures();
+    const otherOwner = randomUUID();
+    await db.query("INSERT INTO users(id) VALUES($1)", [otherOwner]);
+    const foreignId = randomUUID();
+    await db.query(
+      "INSERT INTO insights(id,user_id,title,summary,creation_method,user_confirmed) VALUES($1,$2,'Private title','Private learning','user',true)",
+      [foreignId, otherOwner],
+    );
+    await db.query("UPDATE insights SET user_confirmed=false WHERE id=$1", [
+      ids[0],
+    ]);
+    expect((await request("/api/insights")).body).toHaveLength(4);
+    expect((await request(`/api/insights/${foreignId}`)).status).toBe(404);
+    expect((await request(`/api/insights/${ids[0]}`)).status).toBe(404);
+    expect((await request("/api/insights?q=Private")).body).toEqual([]);
+  });
+  it("handles multiple seeds, multiple sources, literal text search and approved Insights without provenance", async () => {
+    await start();
+    const { ids, conversations } = await libraryFixtures();
+    await db.query("INSERT INTO insight_seeds VALUES($1,$2,'Execution')", [
+      owner,
+      ids[0],
+    ]);
+    await db.query("INSERT INTO insight_sources VALUES($1,$2,$3)", [
+      owner,
+      ids[0],
+      conversations[1],
+    ]);
+    await db.query(
+      "UPDATE insights SET summary='Literal 100%_ marker' WHERE id=$1",
+      [ids[0]],
+    );
+    expect((await request("/api/insights?seed=Execution")).body).toHaveLength(
+      1,
+    );
+    expect((await request("/api/insights?q=%25_")).body).toHaveLength(1);
+    expect(
+      (await request(`/api/insights/${ids[0]}`)).body.sources,
+    ).toHaveLength(2);
+    await db.query("DELETE FROM insight_sources WHERE insight_id=$1", [ids[4]]);
+    expect((await request(`/api/insights/${ids[4]}`)).body.sources).toEqual([]);
+  });
+});
+
 describe("Post Workspace API and PostgreSQL invariants", () => {
   it("saves exact source and comments independently of people, Insights, and AI", async () => {
     await start(createAssistant());
