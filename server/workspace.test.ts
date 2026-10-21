@@ -100,6 +100,15 @@ beforeEach(async () => {
       "utf8",
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../database/migrations/003_connection_uniqueness.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   const database: Database = {
     query: (sql, params) => db.query(sql, params),
     transaction: (work) =>
@@ -165,6 +174,306 @@ async function libraryFixtures() {
   }
   return { ids, conversations };
 }
+describe("Phase 3 connections and synthesis", () => {
+  it("supports all relationship types, directional reversals and symmetric duplicate prevention", async () => {
+    await start();
+    const { ids } = await libraryFixtures();
+    for (const type of [
+      "Supports",
+      "Extends",
+      "Contradicts",
+      "Example of",
+      "Leads to",
+      "Related to",
+    ]) {
+      const input = {
+        id: randomUUID(),
+        insightA: ids[0],
+        insightB: ids[4],
+        relationship: type,
+        confirmed: true,
+      };
+      expect((await request("/api/connections", input)).status).toBe(201);
+      expect((await request("/api/connections", input)).status).toBe(201);
+      expect(
+        (await request("/api/connections", { ...input, id: randomUUID() }))
+          .status,
+      ).toBe(409);
+      expect(
+        (
+          await request("/api/connections", {
+            ...input,
+            id: randomUUID(),
+            insightA: ids[4],
+            insightB: ids[0],
+          })
+        ).status,
+      ).toBe(["Contradicts", "Related to"].includes(type) ? 409 : 201);
+    }
+    expect((await request("/api/connections")).body).toHaveLength(10);
+    expect(
+      (
+        await request("/api/connections", {
+          id: randomUUID(),
+          insightA: ids[0],
+          insightB: ids[0],
+          relationship: "Supports",
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request("/api/connections", {
+          id: randomUUID(),
+          insightA: ids[0],
+          insightB: ids[1],
+          relationship: "Ranks",
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request("/api/connections", {
+          id: randomUUID(),
+          insightA: ids[0],
+          insightB: ids[1],
+          relationship: "Supports",
+          confirmed: false,
+        })
+      ).status,
+    ).toBe(400);
+  });
+  it("enforces equivalent uniqueness and self/owner integrity in PostgreSQL", async () => {
+    await start();
+    const { ids } = await libraryFixtures();
+    await db.query(
+      "INSERT INTO insight_connections(user_id,insight_a,insight_b,relationship_type,creation_method,user_confirmed) VALUES($1,$2,$3,'Related to','user',true)",
+      [owner, ids[0], ids[1]],
+    );
+    await expect(
+      db.query(
+        "INSERT INTO insight_connections(user_id,insight_a,insight_b,relationship_type,creation_method,user_confirmed) VALUES($1,$2,$3,'Related to','user',true)",
+        [owner, ids[1], ids[0]],
+      ),
+    ).rejects.toMatchObject({ code: "23505" });
+    await expect(
+      db.query(
+        "INSERT INTO insight_connections(user_id,insight_a,insight_b,relationship_type,creation_method,user_confirmed) VALUES($1,$2,$2,'Supports','user',true)",
+        [owner, ids[0]],
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+    await expect(
+      db.query(
+        "INSERT INTO insight_lineage(user_id,insight_id,source_insight_id) VALUES($1,$2,$3)",
+        [randomUUID(), ids[0], ids[1]],
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+  });
+  it("disconnects only a relationship, leaving Insights and source provenance unchanged", async () => {
+    await start();
+    const { ids, conversations } = await libraryFixtures();
+    const before = (await db.query("SELECT * FROM insights ORDER BY id")).rows;
+    const id = randomUUID();
+    await request("/api/connections", {
+      id,
+      insightA: ids[0],
+      insightB: ids[1],
+      relationship: "Extends",
+      confirmed: true,
+    });
+    expect(
+      (await request(`/api/connections/${id}`, undefined, "DELETE")).status,
+    ).toBe(200);
+    expect((await request("/api/connections")).body).toEqual([]);
+    expect((await db.query("SELECT * FROM insights ORDER BY id")).rows).toEqual(
+      before,
+    );
+    expect((await store.get(conversations[0])).originalText).toBe(exact);
+    expect((await db.query("SELECT * FROM insight_sources")).rows).toHaveLength(
+      5,
+    );
+    expect(
+      (await request(`/api/connections/${id}`, undefined, "DELETE")).status,
+    ).toBe(404);
+  });
+  it("creates and retries an approved, unclassified synthesis with complete lineage without AI or source mutation", async () => {
+    await start(createAssistant());
+    const { ids, conversations } = await libraryFixtures();
+    const before = (await db.query("SELECT * FROM insights ORDER BY id")).rows;
+    const input = {
+      id: randomUUID(),
+      title: "Larger manual Insight",
+      summary: "User interpretation across distinct observations",
+      takeaways: [],
+      seeds: [],
+      sourceIds: [ids[0], ids[3], ids[4]],
+      confirmed: true,
+    };
+    expect((await request("/api/syntheses", input)).status).toBe(201);
+    expect((await request("/api/syntheses", input)).status).toBe(201);
+    expect(
+      (await request("/api/syntheses", { ...input, summary: "Changed retry" }))
+        .status,
+    ).toBe(409);
+    const detail = (await request(`/api/insights/${input.id}`)).body;
+    expect(detail).toMatchObject({
+      title: input.title,
+      summary: input.summary,
+      seeds: [],
+      takeaways: [],
+      isSynthesis: true,
+      sources: [],
+    });
+    expect(detail.synthesizedFrom.map((item: any) => item.id).sort()).toEqual(
+      [...input.sourceIds].sort(),
+    );
+    expect(
+      (await request("/api/insights?seed=Unclassified")).body.map(
+        (item: any) => item.id,
+      ),
+    ).toContain(input.id);
+    expect(
+      (
+        await db.query(
+          "SELECT * FROM insights WHERE id=ANY($1::uuid[]) ORDER BY id",
+          [ids],
+        )
+      ).rows,
+    ).toEqual(before);
+    expect(
+      (
+        await db.query(
+          "SELECT creation_method,user_confirmed FROM insights WHERE id=$1",
+          [input.id],
+        )
+      ).rows[0],
+    ).toEqual({ creation_method: "user", user_confirmed: true });
+    expect((await store.get(conversations[0])).originalText).toBe(exact);
+    const nested = {
+      ...input,
+      id: randomUUID(),
+      sourceIds: [input.id, ids[1]],
+      title: "Nested synthesis",
+    };
+    expect((await request("/api/syntheses", nested)).status).toBe(201);
+    expect(
+      (await request(`/api/insights/${nested.id}`)).body.synthesizedFrom.map(
+        (item: any) => item.id,
+      ),
+    ).toContain(input.id);
+  });
+  it("rejects insufficient, duplicate, foreign and unconfirmed sources; rolls back failed synthesis", async () => {
+    await start();
+    const { ids } = await libraryFixtures();
+    const input = {
+      id: randomUUID(),
+      title: "Manual synthesis",
+      summary: "Learning",
+      seeds: [],
+      takeaways: [],
+      sourceIds: [ids[0], ids[1]],
+      confirmed: true,
+    };
+    for (const sources of [[], [ids[0]], [ids[0], ids[0]]])
+      expect(
+        (await request("/api/syntheses", { ...input, sourceIds: sources }))
+          .status,
+      ).toBe(400);
+    expect(
+      (await request("/api/syntheses", { ...input, confirmed: false })).status,
+    ).toBe(400);
+    await db.query("UPDATE insights SET user_confirmed=false WHERE id=$1", [
+      ids[1],
+    ]);
+    expect((await request("/api/syntheses", input)).status).toBe(404);
+    expect(
+      (
+        await request("/api/connections", {
+          id: randomUUID(),
+          insightA: ids[0],
+          insightB: ids[1],
+          relationship: "Supports",
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(404);
+    await expect(
+      store.connections().synthesize({
+        ...input,
+        sourceIds: [ids[0], ids[2]],
+        seeds: ["Invalid"] as never,
+        confirmed: true,
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
+    expect(
+      (await db.query("SELECT * FROM insights WHERE id=$1", [input.id])).rows,
+    ).toHaveLength(0);
+    expect(
+      (
+        await db.query("SELECT * FROM insight_lineage WHERE insight_id=$1", [
+          input.id,
+        ])
+      ).rows,
+    ).toHaveLength(0);
+  });
+  it("preserves owner isolation for connections, candidate selection, deletion, synthesis and lineage", async () => {
+    await start();
+    const { ids } = await libraryFixtures();
+    const foreignOwner = randomUUID(),
+      foreignId = randomUUID(),
+      foreignConnection = randomUUID();
+    await db.query("INSERT INTO users(id) VALUES($1)", [foreignOwner]);
+    await db.query(
+      "INSERT INTO insights(id,user_id,title,summary,creation_method,user_confirmed) VALUES($1,$2,'Private','Private','user',true)",
+      [foreignId, foreignOwner],
+    );
+    expect(
+      (await request("/api/insights")).body.map((item: any) => item.id),
+    ).not.toContain(foreignId);
+    const input = {
+      id: randomUUID(),
+      insightA: ids[0],
+      insightB: foreignId,
+      relationship: "Supports",
+      confirmed: true,
+    };
+    expect((await request("/api/connections", input)).status).toBe(404);
+    expect(
+      (
+        await request("/api/syntheses", {
+          id: randomUUID(),
+          title: "Invalid",
+          summary: "Invalid",
+          seeds: [],
+          takeaways: [],
+          sourceIds: [ids[0], foreignId],
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(404);
+    const other = new WorkspaceStore(
+      {
+        query: (sql, args) => db.query(sql, args),
+        transaction: (work) =>
+          db.transaction((tx) => work((sql, args) => tx.query(sql, args))),
+      },
+      foreignOwner,
+    );
+    await request("/api/connections", {
+      ...input,
+      insightB: ids[1],
+      id: foreignConnection,
+    });
+    expect(await other.connections().list()).toEqual([]);
+    await expect(
+      other.connections().remove(foreignConnection),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await request("/api/connections")).body).toHaveLength(1);
+  });
+});
+
 describe("Insights Library API", () => {
   it("retrieves five existing approved records and filters the documented seed distribution", async () => {
     await start();

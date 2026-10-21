@@ -201,6 +201,7 @@ export function InsightsLibrary() {
                       {item.title}
                     </Link>
                   </h2>
+                  {item.isSynthesis && <p>Synthesized Insight</p>}
                   <p className="preserve-text">{item.summary}</p>
                   <SeedTags values={item.seeds} />
                   {!!item.people.length && (
@@ -249,12 +250,37 @@ export function InsightsLibrary() {
             !loadingDetail &&
             !detailError && (
               <>
-                <p className="eyebrow">Approved Insight</p>
+                <p className="eyebrow">
+                  {detail.isSynthesis
+                    ? "Approved synthesized Insight"
+                    : "Approved Insight"}
+                </p>
                 <h2 ref={heading} tabIndex={-1}>
                   {detail.title}
                 </h2>
                 <p className="preserve-text">{detail.summary}</p>
                 <SeedTags values={detail.seeds} />
+                <Link to={`/connections?from=${detail.id}`}>
+                  Connect this Insight
+                </Link>
+                {detail.isSynthesis && (
+                  <section aria-label="Synthesis lineage">
+                    <h3>Synthesized from</h3>
+                    <ul>
+                      {detail.synthesizedFrom.map((source) => (
+                        <li key={source.id}>
+                          <Link to={`/insights?insight=${source.id}`}>
+                            {source.title}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                    <p>
+                      Open a source Insight to follow its provenance to the
+                      original conversations.
+                    </p>
+                  </section>
+                )}
                 {!!detail.takeaways.length && (
                   <details>
                     <summary>Takeaways (optional)</summary>
@@ -276,7 +302,7 @@ export function InsightsLibrary() {
                   aria-label="Source provenance"
                 >
                   <h3>Source provenance</h3>
-                  {!detail.sources.length && (
+                  {!detail.sources.length && !detail.isSynthesis && (
                     <p>No source conversation is linked to this Insight.</p>
                   )}
                   {detail.sources.map((source) => (

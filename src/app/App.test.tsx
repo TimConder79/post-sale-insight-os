@@ -36,7 +36,11 @@ describe("Application routes", () => {
         screen.getByRole("navigation", { name: "Primary navigation" }),
       ).getByRole("link", { name: title }),
     ).toHaveAttribute("aria-current", "page");
-    if (path !== "/post-workspace" && path !== "/insights")
+    if (
+      path !== "/post-workspace" &&
+      path !== "/insights" &&
+      path !== "/connections"
+    )
       expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
   it("navigates between workspaces", async () => {

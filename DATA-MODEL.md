@@ -31,3 +31,8 @@ Derived records should include creation method (`user`, `ai_suggested`, `ai_then
 
 ## Phase 1 durable response (Issue #5)
 A conversation may have one latest explicitly saved response in `conversation_responses`, with its owner and save timestamp. Response text is separate from immutable source and from approved Insights. No response row means empty response text when reopening older conversations. An explicit save replaces or clears the response; it does not claim posting or create interaction events.
+
+## Phase 3 relationships and synthesis (Issue #9)
+`insight_connections` contains explicit approved relationships between two approved Insights of the same owner. Supports, Extends, Example of, and Leads to use A → B; Contradicts and Related to are symmetric. Confirmed equivalent relationships are unique per owner/type/pair. Removing a connection does not remove Insights.
+
+A synthesis is a row in `insights`, with direct source Insight IDs in `insight_lineage`; it is not a separate document type and does not require a direct conversation of its own. Every selected source is retained and remains traceable through its existing provenance. Nested syntheses retain direct lineage links without copying/flattening source records. Seeds and Takeaways remain optional. No destructive Insight deletion API is introduced.

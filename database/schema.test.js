@@ -71,7 +71,7 @@ describe("PostgreSQL foundation", () => {
     ).toBe(sourceText);
     expect(
       (await db.query("SELECT * FROM schema_migrations")).rows,
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
   it("upgrades a pre-response conversation without changing its exact source", async () => {
     const legacy = new PGlite();
@@ -241,6 +241,49 @@ describe("PostgreSQL foundation", () => {
       ),
     ).rejects.toMatchObject({ code: "23514" });
   });
+  it("refuses conflicting legacy connections without deleting or rewriting user records", async () => {
+    const legacy = new PGlite();
+    try {
+      await legacy.exec(
+        await readFile(
+          new URL("./migrations/001_initial.sql", import.meta.url),
+          "utf8",
+        ),
+      );
+      const owner = (
+        await legacy.query("INSERT INTO users DEFAULT VALUES RETURNING id")
+      ).rows[0].id;
+      const ids = (
+        await legacy.query(
+          "INSERT INTO insights(user_id,title,summary,creation_method,user_confirmed) VALUES($1,'A','Learning A','user',true),($1,'B','Learning B','user',true) RETURNING id",
+          [owner],
+        )
+      ).rows.map((row) => row.id);
+      await legacy.query(
+        "INSERT INTO insight_connections(user_id,insight_a,insight_b,relationship_type,creation_method,user_confirmed) VALUES($1,$2,$3,'Related to','user',true),($1,$3,$2,'Related to','user',true)",
+        [owner, ...ids],
+      );
+      await expect(
+        legacy.exec(
+          await readFile(
+            new URL(
+              "./migrations/003_connection_uniqueness.sql",
+              import.meta.url,
+            ),
+            "utf8",
+          ),
+        ),
+      ).rejects.toMatchObject({ code: "23505" });
+      expect(
+        (await legacy.query("SELECT * FROM insight_connections")).rows,
+      ).toHaveLength(2);
+      expect((await legacy.query("SELECT * FROM insights")).rows).toHaveLength(
+        2,
+      );
+    } finally {
+      await legacy.close();
+    }
+  });
   it("rolls back a failed migration and refuses changes to applied SQL", async () => {
     const temp = await mkdtemp(join(tmpdir(), "post-sale-migrations-"));
     const url = pathToFileURL(`${temp}/`);
@@ -256,7 +299,7 @@ describe("PostgreSQL foundation", () => {
       ).toBeNull();
       expect(
         (await db.query("SELECT * FROM schema_migrations")).rows,
-      ).toHaveLength(2);
+      ).toHaveLength(3);
       await rm(join(temp, "002_failure.sql"));
       await writeFile(join(temp, "001_initial.sql"), "SELECT 1;");
       await expect(migrate(db, url)).rejects.toThrow(

@@ -16,10 +16,12 @@ export type LibraryItem = {
   people: { name: string; company: string | null }[];
   createdAt: string;
   favorite: boolean;
+  isSynthesis: boolean;
 };
 export type LibraryDetail = LibraryItem & {
   takeaways: string[];
   notes: string | null;
+  synthesizedFrom: { id: string; title: string }[];
   sources: {
     id: string;
     originalText: string;
