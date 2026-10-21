@@ -3,6 +3,7 @@
 ## Primary entities
 - users
 - source_conversations
+- conversation_responses
 - people
 - interaction_events
 - insights
@@ -27,3 +28,6 @@
 
 ## Provenance fields
 Derived records should include creation method (`user`, `ai_suggested`, `ai_then_edited`) where useful, timestamps, and source IDs. Source text remains separate from derived summaries.
+
+## Phase 1 durable response (Issue #5)
+A conversation may have one latest explicitly saved response in `conversation_responses`, with its owner and save timestamp. Response text is separate from immutable source and from approved Insights. No response row means empty response text when reopening older conversations. An explicit save replaces or clears the response; it does not claim posting or create interaction events.

@@ -103,6 +103,12 @@ test("source → development preview → editable response → explicitly approv
   await page.getByRole("button", { name: "Use suggested Insight" }).click();
   data = await (await page.request.get(`/api/conversations/${id}`)).json();
   expect(data.insights).toEqual([]);
+  await page
+    .getByRole("button", { name: "Save response", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toHaveText(
+    "Response saved. Nothing was posted to LinkedIn.",
+  );
   await approveManual(page, "Evidence before conclusions");
   await page.reload();
   await expect(
@@ -114,6 +120,10 @@ test("source → development preview → editable response → explicitly approv
     "A named source",
   );
   data = await (await page.request.get(`/api/conversations/${id}`)).json();
+  expect(data.response).toBe("My final manually edited response.");
+  await expect(page.getByLabel("Our response", { exact: true })).toHaveValue(
+    data.response,
+  );
   expect(data.originalText).toBe(exact);
   expect(data.relevantComments).toBe(comments);
   expect(data.insights[0]).toMatchObject({
@@ -178,6 +188,18 @@ test("entire manual path works with AI unavailable and no person", async ({
   await expect(
     page.getByRole("button", { name: "Analyze source" }),
   ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Analyze source" }),
+  ).toHaveAccessibleDescription(/AI is unavailable/);
+  await expect(
+    page.getByRole("button", { name: "Concise", exact: true }),
+  ).toHaveAccessibleDescription(/AI is unavailable/);
+  await page
+    .getByRole("button", { name: "Save response", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toHaveText(
+    "Response saved. Nothing was posted to LinkedIn.",
+  );
   await approveManual(page, "Manual learning without AI");
   const id = new URL(page.url()).searchParams.get("conversation");
   const data = await (
@@ -263,5 +285,102 @@ test("browser assets and API responses contain no server credentials or provider
     expect(content).not.toContain("DATABASE_URL");
     expect(content).not.toContain("AI_SERVICE_TOKEN");
     expect(content).not.toContain("pg-protocol");
+  }
+});
+
+test("response save failures preserve edits and the saved response; old sources reopen empty", async ({
+  page,
+}) => {
+  await page.goto("/post-workspace");
+  const longSource =
+    Array.from(
+      { length: 80 },
+      (_, i) => `Line ${i}: exact LinkedIn source text.`,
+    ).join("\r\n") + exact;
+  await paste(page, "Original Post", longSource);
+  await page.getByRole("button", { name: "Save source", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(
+    "Source saved exactly as supplied.",
+  );
+  const url = page.url();
+  await page
+    .getByLabel("Original Post", { exact: false })
+    .evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+  await page.reload();
+  await expect(page.getByLabel("Our response", { exact: true })).toHaveValue(
+    "",
+  );
+  await expect(
+    page.getByText("No saved response yet.", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Our response", { exact: true }).fill("Saved response");
+  await page
+    .getByRole("button", { name: "Save response", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toHaveText(
+    "Response saved. Nothing was posted to LinkedIn.",
+  );
+  await page
+    .getByLabel("Our response", { exact: true })
+    .fill("Unsaved revision");
+  await page.route("**/api/conversations/*/response", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Response save failed." }),
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Save response", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toHaveText("Response save failed.");
+  await expect(page.getByLabel("Our response", { exact: true })).toHaveValue(
+    "Unsaved revision",
+  );
+  await expect(
+    page.getByText("Unsaved response changes.", { exact: true }),
+  ).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.reload();
+  await expect(page.getByLabel("Our response", { exact: true })).toHaveValue(
+    "Saved response",
+  );
+  await expect(page).toHaveURL(url);
+  const id = new URL(url).searchParams.get("conversation");
+  expect(
+    (await (await page.request.get(`/api/conversations/${id}`)).json())
+      .originalText,
+  ).toBe(longSource);
+});
+
+test("response dominates desktop and title wraps, with no overflow at desktop/tablet/mobile widths", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/post-workspace");
+  const source = await page
+    .locator('[aria-labelledby="source-title"]')
+    .boundingBox();
+  const response = await page
+    .locator('[aria-labelledby="response-title"]')
+    .boundingBox();
+  const editor = await page
+    .getByLabel("Our response", { exact: true })
+    .boundingBox();
+  const title = await page
+    .getByLabel("Insight title", { exact: true })
+    .boundingBox();
+  expect(response!.width).toBeGreaterThan(source!.width * 1.8);
+  expect(editor!.height).toBeGreaterThanOrEqual(440);
+  expect(title!.height).toBeGreaterThanOrEqual(80);
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });

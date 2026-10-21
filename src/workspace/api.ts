@@ -6,11 +6,15 @@ import type {
   SourceInput,
 } from "../shared/workspace";
 
-async function request<T>(path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  path: string,
+  body?: unknown,
+  method = body ? "POST" : "GET",
+): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api${path}`, {
-      method: body ? "POST" : "GET",
+      method,
       headers: body ? { "Content-Type": "application/json" } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -35,6 +39,12 @@ export const api = {
   get: (id: string) => request<Conversation>(`/conversations/${id}`),
   saveSource: (id: string, source: SourceInput) =>
     request<Conversation>("/conversations", { id, source }),
+  saveResponse: (id: string, text: string) =>
+    request<{ response: string; responseSavedAt: string }>(
+      `/conversations/${id}/response`,
+      { text },
+      "PUT",
+    ),
   approve: (conversationId: string, id: string, fields: InsightInput) =>
     request<Conversation>(`/conversations/${conversationId}/insights`, {
       ...fields,

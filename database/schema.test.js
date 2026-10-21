@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -71,7 +71,40 @@ describe("PostgreSQL foundation", () => {
     ).toBe(sourceText);
     expect(
       (await db.query("SELECT * FROM schema_migrations")).rows,
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+  });
+  it("upgrades a pre-response conversation without changing its exact source", async () => {
+    const legacy = new PGlite();
+    const temp = await mkdtemp(join(tmpdir(), "post-sale-upgrade-"));
+    try {
+      await writeFile(
+        join(temp, "001_initial.sql"),
+        await readFile(
+          new URL("./migrations/001_initial.sql", import.meta.url),
+          "utf8",
+        ),
+      );
+      await migrate(legacy, pathToFileURL(`${temp}/`));
+      await legacy.exec(
+        "INSERT INTO users (id) VALUES ('33333333-3333-4333-8333-333333333333')",
+      );
+      await legacy.query(
+        "INSERT INTO source_conversations (user_id,source_type,original_text) VALUES ('33333333-3333-4333-8333-333333333333','linkedin',$1)",
+        [sourceText],
+      );
+      await migrate(legacy, directory);
+      await migrate(legacy, directory);
+      expect(
+        (await legacy.query("SELECT original_text FROM source_conversations"))
+          .rows[0].original_text,
+      ).toBe(sourceText);
+      expect(
+        (await legacy.query("SELECT * FROM conversation_responses")).rows,
+      ).toHaveLength(0);
+    } finally {
+      await legacy.close();
+      await rm(temp, { recursive: true, force: true });
+    }
   });
   it("retains source text and comments when derived conclusions change", async () => {
     const conversation = await source();
@@ -223,7 +256,7 @@ describe("PostgreSQL foundation", () => {
       ).toBeNull();
       expect(
         (await db.query("SELECT * FROM schema_migrations")).rows,
-      ).toHaveLength(1);
+      ).toHaveLength(2);
       await rm(join(temp, "002_failure.sql"));
       await writeFile(join(temp, "001_initial.sql"), "SELECT 1;");
       await expect(migrate(db, url)).rejects.toThrow(
