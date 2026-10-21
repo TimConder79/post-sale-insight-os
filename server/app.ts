@@ -5,6 +5,7 @@ import {
   analysisRequest,
   approveInsight,
   createSource,
+  saveResponse,
   insightFields,
   sourceFields,
   suggestionSchema,
@@ -68,6 +69,11 @@ export function createApp(
   });
   app.get("/api/conversations/:id", async (req, res) => {
     res.json(await store.get(z.uuid().parse(req.params.id)));
+  });
+  app.put("/api/conversations/:id/response", async (req, res) => {
+    const id = z.uuid().parse(req.params.id);
+    const input = saveResponse.parse(req.body);
+    res.json(await store.saveResponse(id, input.text));
   });
   app.post("/api/conversations/:id/insights", async (req, res) => {
     const conversationId = z.uuid().parse(req.params.id);

@@ -91,6 +91,15 @@ beforeEach(async () => {
       "utf8",
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../database/migrations/002_conversation_responses.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   const database: Database = {
     query: (sql, params) => db.query(sql, params),
     transaction: (work) =>
@@ -121,6 +130,92 @@ describe("Post Workspace API and PostgreSQL invariants", () => {
     expect((await db.query("SELECT * FROM insights")).rows).toHaveLength(0);
     expect((await db.query("SELECT * FROM people")).rows).toHaveLength(0);
     expect((await request("/api/conversations")).body[0].id).toBe(saved.id);
+  });
+  it("saves, replaces, clears and reopens responses without changing source or creating events", async () => {
+    await start();
+    const saved = await save();
+    expect(saved.response).toBe("");
+    expect(saved.responseSavedAt).toBeNull();
+    const text = "  My response\r\nwith exact whitespace.  ";
+    const result = await request(
+      `/api/conversations/${saved.id}/response`,
+      { text },
+      "PUT",
+    );
+    expect(result.status).toBe(200);
+    expect(result.body.response).toBe(text);
+    const reopened = await request(`/api/conversations/${saved.id}`);
+    expect(reopened.body).toMatchObject({ ...source, response: text });
+    expect(reopened.body.responseSavedAt).toBeTruthy();
+    expect((await store.get(saved.id)).response).toBe(text);
+    expect(
+      (await db.query("SELECT * FROM conversation_responses")).rows[0],
+    ).toMatchObject({ conversation_id: saved.id, user_id: owner });
+    await request(
+      `/api/conversations/${saved.id}/response`,
+      { text: "Revised response" },
+      "PUT",
+    );
+    expect((await store.get(saved.id)).response).toBe("Revised response");
+    await request(
+      `/api/conversations/${saved.id}/response`,
+      { text: "" },
+      "PUT",
+    );
+    expect((await store.get(saved.id)).response).toBe("");
+    expect((await store.get(saved.id)).originalText).toBe(exact);
+    expect(
+      (await db.query("SELECT * FROM interaction_events")).rows,
+    ).toHaveLength(0);
+    expect(
+      (await db.query("SELECT * FROM conversation_responses")).rows,
+    ).toHaveLength(1);
+  });
+  it("protects response ownership and rejects invalid writes without losing the saved response", async () => {
+    await start();
+    const saved = await save();
+    await store.saveResponse(saved.id, "Keep this");
+    expect(
+      (
+        await request(
+          `/api/conversations/${saved.id}/response`,
+          { text: "x".repeat(20001) },
+          "PUT",
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(
+          `/api/conversations/${saved.id}/response`,
+          { text: "changed", originalText: "changed" },
+          "PUT",
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(
+          `/api/conversations/${randomUUID()}/response`,
+          { text: "changed" },
+          "PUT",
+        )
+      ).status,
+    ).toBe(404);
+    const other = new WorkspaceStore(
+      {
+        query: (sql, args) => db.query(sql, args),
+        transaction: (work) =>
+          db.transaction((tx) => work((sql, args) => tx.query(sql, args))),
+      },
+      randomUUID(),
+    );
+    await other.initialize();
+    await expect(
+      other.saveResponse(saved.id, "Wrong owner"),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await store.get(saved.id)).response).toBe("Keep this");
+    expect((await store.get(saved.id)).originalText).toBe(exact);
   });
   it("atomically links optional person metadata, and retries without duplicate people", async () => {
     await start();

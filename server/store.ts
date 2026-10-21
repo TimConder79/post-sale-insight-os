@@ -72,7 +72,7 @@ export class WorkspaceStore {
   }
   async get(id: string): Promise<Conversation> {
     const { rows } = await this.db.query(
-      `SELECT s.*, p.name, p.role, p.company, p.linkedin_url FROM source_conversations s LEFT JOIN people p ON p.id = s.author_id AND p.user_id = s.user_id WHERE s.id = $1 AND s.user_id = $2`,
+      `SELECT s.*, p.name, p.role, p.company, p.linkedin_url, r.response_text, r.saved_at AS response_saved_at FROM source_conversations s LEFT JOIN people p ON p.id = s.author_id AND p.user_id = s.user_id LEFT JOIN conversation_responses r ON r.conversation_id = s.id AND r.user_id = s.user_id WHERE s.id = $1 AND s.user_id = $2`,
       [id, this.owner],
     );
     const row = rows[0];
@@ -104,6 +104,8 @@ export class WorkspaceStore {
       relevantComments: row.relevant_comments ?? "",
       sourceUrl: row.source_url ?? "",
       createdAt: row.created_at,
+      response: row.response_text ?? "",
+      responseSavedAt: row.response_saved_at ?? null,
       person: row.name
         ? {
             name: row.name,
@@ -175,6 +177,21 @@ export class WorkspaceStore {
         "A different source was already saved with this identifier. Reopen it before saving again.",
       );
     return saved;
+  }
+  async saveResponse(conversationId: string, text: string) {
+    const { rows } = await this.db.query<{
+      response: string;
+      responseSavedAt: string;
+    }>(
+      `INSERT INTO conversation_responses (conversation_id, user_id, response_text)
+       SELECT id, user_id, $3 FROM source_conversations WHERE id = $1 AND user_id = $2
+       ON CONFLICT (conversation_id) DO UPDATE SET response_text = EXCLUDED.response_text, saved_at = now()
+       WHERE conversation_responses.user_id = EXCLUDED.user_id
+       RETURNING response_text AS response, saved_at AS "responseSavedAt"`,
+      [conversationId, this.owner, text],
+    );
+    if (!rows[0]) throw new WorkspaceError(404, "Conversation not found.");
+    return rows[0];
   }
   async approve(conversationId: string, id: string, fields: InsightInput) {
     await this.get(conversationId);

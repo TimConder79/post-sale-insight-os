@@ -40,6 +40,7 @@ export const sourceFields = z
 export const createSource = z
   .object({ id: z.uuid(), source: sourceFields })
   .strict();
+export const saveResponse = z.object({ text: z.string().max(20_000) }).strict();
 export const insightFields = z
   .object({
     title: z
@@ -117,6 +118,8 @@ export type Conversation = SourceInput & {
   id: string;
   createdAt: string;
   insights: ApprovedInsight[];
+  response: string;
+  responseSavedAt: string | null;
 };
 export type Analysis = Suggestion & {
   mode: "stub";

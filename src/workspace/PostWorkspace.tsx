@@ -6,6 +6,7 @@ import {
   sourceFields,
   insightFields,
   revisionModes,
+  saveResponse as responseFields,
 } from "../shared/workspace";
 import type {
   Analysis,
@@ -133,6 +134,7 @@ export function PostWorkspace() {
           loadedId.current = conversation.id;
           sourceId.current = conversation.id;
           setSaved(conversation);
+          setComment(conversation.response);
           setSource({
             originalText: conversation.originalText,
             relevantComments: conversation.relevantComments,
@@ -203,7 +205,7 @@ export function PostWorkspace() {
       (!saved && source.originalText) ||
       insight.title ||
       insight.summary ||
-      comment
+      comment !== (saved?.response ?? "")
     )
       return window.confirm(
         "Leave this workspace? Unsaved source, response and Insight edits will be discarded.",
@@ -254,6 +256,33 @@ export function PostWorkspace() {
       setRecent(await api.list());
     });
   }
+  async function saveComment() {
+    if (!saved) return;
+    const current = generation.current;
+    await run("Saving response", async () => {
+      const parsed = responseFields.safeParse({ text: comment });
+      if (!parsed.success)
+        throw new Error(
+          "Response must be at most 20,000 characters. Your edits have been kept.",
+        );
+      const result = await api.saveResponse(saved.id, parsed.data.text);
+      if (current !== generation.current) return;
+      setSaved((previous) =>
+        previous ? { ...previous, ...result } : previous,
+      );
+      setNotice("Response saved. Nothing was posted to LinkedIn.");
+    });
+  }
+  const responseDirty = comment !== (saved?.response ?? "");
+  useEffect(() => {
+    if (!responseDirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [responseDirty]);
   async function assist(
     mode: (typeof revisionModes)[number] = "regenerate",
     onlyComment = false,
@@ -467,15 +496,32 @@ export function PostWorkspace() {
           <button
             type="button"
             disabled={!saved || !!busy || loading || aiMode === "unavailable"}
+            aria-describedby={
+              aiMode === "unavailable" ? "analyze-unavailable" : undefined
+            }
+            title={
+              aiMode === "unavailable"
+                ? "AI is unavailable. Write a response and Insight manually."
+                : undefined
+            }
             onClick={() => void assist()}
           >
             Analyze source
           </button>
+          {aiMode === "unavailable" && (
+            <p id="analyze-unavailable">
+              Analyze is disabled because AI is unavailable. You can save source
+              and write manually.
+            </p>
+          )}
           {!saved && (
             <p>Save source first so proposals can retain provenance.</p>
           )}
         </section>
-        <section className="workspace-panel" aria-labelledby="response-title">
+        <section
+          className="workspace-panel response-panel"
+          aria-labelledby="response-title"
+        >
           <h2 id="response-title">Analysis &amp; Response</h2>
           <p>
             {aiMode === "stub"
@@ -513,15 +559,37 @@ export function PostWorkspace() {
           <label htmlFor="comment-draft">Our response</label>
           <textarea
             id="comment-draft"
-            rows={8}
+            rows={16}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             disabled={!!busy || loading}
           />
           <p>
-            Edit, then copy and post manually on LinkedIn. This application
-            never posts for you.
+            Save response to keep it with this conversation. Copying does not
+            save or post it to LinkedIn.
           </p>
+          <p id="response-save-state">
+            {!saved
+              ? "Save source first to enable response saving."
+              : responseDirty
+                ? "Unsaved response changes."
+                : saved.responseSavedAt
+                  ? "Showing your saved response."
+                  : "No saved response yet."}
+          </p>
+          <button
+            type="button"
+            disabled={!saved || !!busy || loading || !responseDirty}
+            onClick={() => void saveComment()}
+          >
+            Save response
+          </button>
+          {aiMode === "unavailable" && (
+            <p id="revision-unavailable">
+              AI revisions are disabled because AI is unavailable. The response
+              editor, Save response and Copy response work manually.
+            </p>
+          )}
           <div className="button-row">
             {revisionModes.map((mode) => (
               <button
@@ -529,6 +597,14 @@ export function PostWorkspace() {
                 key={mode}
                 disabled={
                   !saved || !!busy || loading || aiMode === "unavailable"
+                }
+                aria-describedby={
+                  aiMode === "unavailable" ? "revision-unavailable" : undefined
+                }
+                title={
+                  aiMode === "unavailable"
+                    ? "AI is unavailable. Edit the response manually."
+                    : undefined
                 }
                 onClick={() => void assist(mode, true)}
               >
@@ -567,15 +643,15 @@ export function PostWorkspace() {
             </details>
           )}
           <fieldset disabled={!!busy || loading}>
-            <label>
-              Insight title
-              <input
-                value={insight.title}
-                onChange={(e) =>
-                  setInsight({ ...insight, title: e.target.value })
-                }
-              />
-            </label>
+            <label htmlFor="insight-title-editor">Insight title</label>
+            <textarea
+              id="insight-title-editor"
+              rows={3}
+              value={insight.title}
+              onChange={(e) =>
+                setInsight({ ...insight, title: e.target.value })
+              }
+            />
             <label htmlFor="insight-summary">Insight summary</label>
             <textarea
               id="insight-summary"

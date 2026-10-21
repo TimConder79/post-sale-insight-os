@@ -50,20 +50,21 @@ This is a **local single-user API**, not a remotely authenticated service. The A
 
 1. Paste the Original Post. Optionally expand Relevant Comments and provenance/person details. A URL is metadata only; it is never fetched. A person name is needed only when linking person metadata.
 2. **Save source** independently of any assistance or Insight. Post/comments are preserved as supplied, including whitespace and clipboard line endings; later edits before initial save preserve untouched line endings. Saved source fields are locked, and no source-update API exists.
-3. Write your response manually, or explicitly enable `AI_MODE=stub` and restart to review deterministic development-preview suggestions. The stub is labeled as such, uses a source excerpt, and does not select seeds or claim model analysis. Its revision controls demonstrate the future interface; they are templates, not real AI. Edit and **Copy response**, then post manually on LinkedIn. Nothing is posted automatically.
+3. Write your response manually, or explicitly enable `AI_MODE=stub` and restart to review deterministic development-preview suggestions. The stub is labeled as such, uses a source excerpt, and does not select seeds or claim model analysis. Its revision controls demonstrate the future interface; they are templates, not real AI. Edit and explicitly **Save response** to retain the latest text with the conversation. **Copy response** only copies; post manually on LinkedIn. Neither action posts or invents a posting outcome.
 4. Write a manual Insight or explicitly select the development proposal. Edit its title/summary and optional takeaways/seeds/themes. Nothing becomes durable knowledge until **Approve & save Insight** is clicked. Approval saves a distinct Insight plus `insight_sources` provenance, in a separate transaction from source capture.
-5. Refresh the conversation URL or use **Reopen saved conversations** to see the exact saved source, optional person metadata and approved linked Insights. **New conversation** starts another source. No full Insights Library or Relationships workflow is implemented.
+5. Refresh the conversation URL or use **Reopen saved conversations** to see the exact saved source, the latest explicitly saved response, optional person metadata and approved linked Insights. **New conversation** starts another source. No full Insights Library or Relationships workflow is implemented.
 
 Manual and development-preview approvals use `creation_method=user` and `user_confirmed=true`; the stub is not real AI, so it must not be attributed as AI-generated. Existing `ai_suggested`/`ai_then_edited` schema values remain intact for a future approved integration. Client-supplied creation methods and ownership are rejected.
 
-Source saves and Insight approvals use client-generated IDs for safe retries; matching retries do not create duplicate records. A changed retry returns a conflict rather than pretending edits were saved. Failed assistance or persistence requests keep your current edits in the workspace. Draft analysis, comments and unapproved Insights are session-local, not durable history: save source and approve an Insight before leaving if you want to retain them. Approved records reopen after refresh; source and approved Insights cannot be overwritten through this Phase 1 API.
+Source saves and Insight approvals use client-generated IDs for safe retries; matching retries do not create duplicate records. A changed retry returns a conflict rather than pretending edits were saved. Failed assistance or persistence requests keep your current edits in the workspace. Analysis and unapproved Insights remain session-local. Responses persist only through **Save response**, including an intentional empty response to clear the saved text. Unsaved response edits are marked, and reload/close or workspace conversation switching warns before discarding them; browser history navigation does not autosave drafts. The latest explicit response save wins across tabs; no revision history is introduced. Save failures retain current edits and the previous durable response. Source and approved Insights cannot be overwritten through this Phase 1 API.
 
 ## API and AI boundary
 
 - `GET /api/status`: development AI mode only, no secrets.
 - `GET /api/conversations`: this owner's conversation previews for reopening.
 - `POST /api/conversations`: `{ id, source: { originalText, relevantComments, sourceUrl, person? } }`.
-- `GET /api/conversations/:id`: exact source, optional person, approved linked Insights.
+- `GET /api/conversations/:id`: exact source, latest saved response, optional person, approved linked Insights.
+- `PUT /api/conversations/:id/response`: `{ text }`, saving the latest response independently; empty text explicitly clears it. Ownership comes from the server, and source fields are not accepted.
 - `POST /api/conversations/:id/insights`: `{ id, title, summary, takeaways, seeds, themes, confirmed: true }`.
 - `POST /api/assist`: source, optional saved conversation ID, current comment and revision mode; returns validated, unconfirmed suggestion fields. Saved-source requests use server-read source and approved linked knowledge rather than trusting client replacements.
 
@@ -71,7 +72,7 @@ The provider-neutral `Assistant.run` boundary in `server/ai.ts` accepts exact so
 
 ## Database migrations
 
-`database/migrations/001_initial.sql` remains unchanged. Phase 1 requires no schema migration. The existing schema covers all approved entities, including source/Insight separation, `insight_sources`, independent connections and synthesis lineage. Only people, source conversations and approved Insights plus their seed/theme/provenance joins are used by this phase.
+`database/migrations/001_initial.sql` remains unchanged. The Phase 1 follow-up migration `002_conversation_responses.sql` adds a separate latest-response row per conversation with owner provenance and a save timestamp. Existing conversations without a response row reopen with empty response text. The existing schema covers all approved entities, including source/Insight separation, `insight_sources`, independent connections and synthesis lineage. Only people, source conversations, conversation responses and approved Insights plus their seed/theme/provenance joins are used by this phase.
 
 ```sh
 npm run db:migrate
