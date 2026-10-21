@@ -71,7 +71,7 @@ describe("PostgreSQL foundation", () => {
     ).toBe(sourceText);
     expect(
       (await db.query("SELECT * FROM schema_migrations")).rows,
-    ).toHaveLength(3);
+    ).toHaveLength(4);
   });
   it("upgrades a pre-response conversation without changing its exact source", async () => {
     const legacy = new PGlite();
@@ -299,7 +299,7 @@ describe("PostgreSQL foundation", () => {
       ).toBeNull();
       expect(
         (await db.query("SELECT * FROM schema_migrations")).rows,
-      ).toHaveLength(3);
+      ).toHaveLength(4);
       await rm(join(temp, "002_failure.sql"));
       await writeFile(join(temp, "001_initial.sql"), "SELECT 1;");
       await expect(migrate(db, url)).rejects.toThrow(
@@ -309,4 +309,52 @@ describe("PostgreSQL foundation", () => {
       await rm(temp, { recursive: true, force: true });
     }
   });
+});
+
+it("adds durable Themes without promoting or altering legacy labels, Insights or provenance", async () => {
+  const legacy = new PGlite();
+  try {
+    for (const file of [
+      "001_initial.sql",
+      "002_conversation_responses.sql",
+      "003_connection_uniqueness.sql",
+    ])
+      await legacy.exec(
+        await readFile(
+          new URL(`./migrations/${file}`, import.meta.url),
+          "utf8",
+        ),
+      );
+    const owner = (
+      await legacy.query("INSERT INTO users DEFAULT VALUES RETURNING id")
+    ).rows[0].id;
+    const id = (
+      await legacy.query(
+        "INSERT INTO insights(user_id,title,summary,creation_method,user_confirmed) VALUES($1,'Existing learning','Preserve this','user',true) RETURNING id",
+        [owner],
+      )
+    ).rows[0].id;
+    await legacy.query(
+      "INSERT INTO insight_themes VALUES($1,$2,'Legacy authored subject')",
+      [owner, id],
+    );
+    const before = (await legacy.query("SELECT * FROM insights")).rows;
+    const labels = (await legacy.query("SELECT * FROM insight_themes")).rows;
+    await legacy.exec(
+      await readFile(
+        new URL("./migrations/004_themes.sql", import.meta.url),
+        "utf8",
+      ),
+    );
+    expect((await legacy.query("SELECT * FROM insights")).rows).toEqual(before);
+    expect((await legacy.query("SELECT * FROM insight_themes")).rows).toEqual(
+      labels,
+    );
+    expect((await legacy.query("SELECT * FROM themes")).rows).toEqual([]);
+    expect(
+      (await legacy.query("SELECT * FROM theme_memberships")).rows,
+    ).toEqual([]);
+  } finally {
+    await legacy.close();
+  }
 });

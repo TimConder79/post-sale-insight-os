@@ -1,5 +1,7 @@
 # MVP Roadmap
 
+Issue milestones govern current implementation scope: Issue #11 names **Phase 4 — Themes** (manual subjects and explicit approved-Insight membership). The original numbered plan below predates that milestone; Relationships/Next Actions, Weekly Review and Content Ideas remain deferred, not part of Issue #11.
+
 ## Phase 0 — Foundation
 - Establish app scaffold and local development.
 - Choose/initialize database.

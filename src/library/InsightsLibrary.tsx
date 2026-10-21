@@ -24,18 +24,6 @@ export function InsightsNavigation() {
     </nav>
   );
 }
-export function InsightsFuture({ title }: { title: string }) {
-  return (
-    <section>
-      <h1>{title}</h1>
-      <InsightsNavigation />
-      <p>
-        {title} is planned for a later phase. The Insights Library is available
-        now.
-      </p>
-    </section>
-  );
-}
 function SeedTags({ values }: { values: string[] }) {
   return (
     <p className="seed-tags">

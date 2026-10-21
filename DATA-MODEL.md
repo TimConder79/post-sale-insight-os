@@ -10,7 +10,9 @@
 - insight_sources
 - insight_connections
 - insight_seeds
-- insight_themes
+- insight_themes (legacy text labels)
+- themes
+- theme_memberships
 - next_actions
 - content_ideas
 - content_idea_insights
@@ -36,3 +38,8 @@ A conversation may have one latest explicitly saved response in `conversation_re
 `insight_connections` contains explicit approved relationships between two approved Insights of the same owner. Supports, Extends, Example of, and Leads to use A → B; Contradicts and Related to are symmetric. Confirmed equivalent relationships are unique per owner/type/pair. Removing a connection does not remove Insights.
 
 A synthesis is a row in `insights`, with direct source Insight IDs in `insight_lineage`; it is not a separate document type and does not require a direct conversation of its own. Every selected source is retained and remains traceable through its existing provenance. Nested syntheses retain direct lineage links without copying/flattening source records. Seeds and Takeaways remain optional. No destructive Insight deletion API is introduced.
+
+## Phase 4 Themes (Issue #11)
+`themes` stores owner-scoped, user-authored subjects with stable IDs, name, optional working definition, creation timestamp and user creation method. `theme_memberships` links Themes to approved Insights with same-owner composite foreign keys and a unique Theme/Insight pair. Membership is independent of `insight_seeds`, source provenance and synthesis lineage; removal affects only membership. Both objects and associations require explicit user action. The old `insight_themes` text labels remain unchanged for Phase 1 compatibility and are not automatically converted into durable Themes.
+
+Theme overview counts direct approved member Insights separately from distinct original source conversations reached through those members and their approved synthesis ancestors. Recursive set traversal deduplicates shared/nested provenance, remains owner-scoped and terminates on cycles. These descriptive counts do not rank Themes or imply importance.

@@ -109,6 +109,12 @@ beforeEach(async () => {
       "utf8",
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL("../database/migrations/004_themes.sql", import.meta.url),
+      "utf8",
+    ),
+  );
   const database: Database = {
     query: (sql, params) => db.query(sql, params),
     transaction: (work) =>
@@ -958,5 +964,424 @@ describe("Post Workspace API and PostgreSQL invariants", () => {
         )
       ).status,
     ).toBe(403);
+  });
+});
+
+describe("Phase 4 Themes", () => {
+  async function theme(name = "Forecast evidence") {
+    const input = {
+      id: randomUUID(),
+      name,
+      description: "A working subject, not a Seed.",
+      confirmed: true,
+    };
+    expect((await request("/api/themes", input)).status).toBe(201);
+    return input;
+  }
+  async function approved(conversationId: string, extra = {}) {
+    const id = randomUUID();
+    expect(
+      (
+        await request(`/api/conversations/${conversationId}/insights`, {
+          id,
+          ...fields,
+          takeaways: [],
+          themes: [],
+          confirmed: true,
+          ...extra,
+        })
+      ).status,
+    ).toBe(201);
+    return id;
+  }
+  it("creates empty Themes with metadata, preserves authored language, and handles names and matching retries deliberately", async () => {
+    await start(createAssistant("unavailable"));
+    expect((await request("/api/themes")).body).toEqual([]);
+    const input = await theme("  Forecast Evidence  ");
+    expect((await request("/api/themes", input)).status).toBe(201);
+    expect(
+      (await request("/api/themes", { ...input, name: "Different meaning" }))
+        .status,
+    ).toBe(409);
+    expect(
+      (
+        await request("/api/themes", {
+          ...input,
+          id: randomUUID(),
+          name: "forecast evidence",
+        })
+      ).status,
+    ).toBe(409);
+    const detail = (await request(`/api/themes/${input.id}`)).body;
+    expect(detail).toMatchObject({
+      name: input.name,
+      description: input.description,
+      insightCount: 0,
+      conversationCount: 0,
+      seeds: [],
+      latestInsightAt: null,
+      insights: [],
+    });
+    expect(detail.createdAt).toBeTruthy();
+    expect(
+      (await request(`/api/themes/${input.id.toUpperCase()}`)).status,
+    ).toBe(200);
+    for (const name of ["", " \t\n ", "x".repeat(201)])
+      expect(
+        (await request("/api/themes", { ...input, id: randomUUID(), name }))
+          .status,
+      ).toBe(400);
+    expect(
+      (
+        await request("/api/themes", {
+          ...input,
+          id: randomUUID(),
+          confirmed: false,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request("/api/themes", {
+          ...input,
+          id: randomUUID(),
+          user_id: randomUUID(),
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request("/api/themes", {
+          id: randomUUID(),
+          name: "No definition",
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(201);
+    expect((await request(`/api/themes/${randomUUID()}`)).status).toBe(404);
+  });
+  it("supports explicit cross-Seed, Unclassified, synthesized, and multi-Theme membership without altering existing evidence", async () => {
+    await start(createAssistant("unavailable"));
+    const a = await save();
+    const b = await save({ originalText: "Another source" });
+    const first = await approved(a.id);
+    const second = await approved(b.id, { seeds: ["Economics"] });
+    const synthesis = randomUUID();
+    expect(
+      (
+        await request("/api/syntheses", {
+          id: synthesis,
+          title: "Larger learning",
+          summary: "User interpretation",
+          takeaways: [],
+          seeds: [],
+          sourceIds: [first, second],
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(201);
+    await request("/api/connections", {
+      id: randomUUID(),
+      insightA: first,
+      insightB: second,
+      relationship: "Related to",
+      confirmed: true,
+    });
+    await request(
+      `/api/conversations/${a.id}/response`,
+      { text: "Our durable response" },
+      "PUT",
+    );
+    const snapshot = async () => {
+      const result: Record<string, unknown> = {};
+      for (const table of [
+        "insights",
+        "insight_sources",
+        "insight_seeds",
+        "insight_lineage",
+        "insight_connections",
+        "source_conversations",
+        "conversation_responses",
+        "insight_themes",
+      ])
+        result[table] = (
+          await db.query(`SELECT * FROM ${table} ORDER BY 1,2`)
+        ).rows;
+      return result;
+    };
+    const before = await snapshot();
+    const t = await theme();
+    const other = await theme("Cross-subject learning");
+    const path = `/api/themes/${t.id}/insights`;
+    const association = {
+      insightIds: [first, second, synthesis],
+      confirmed: true,
+    };
+    expect((await request(path, association)).status).toBe(200);
+    expect((await request(path, association)).status).toBe(200);
+    expect(
+      (
+        await request(`/api/themes/${other.id}/insights`, {
+          insightIds: [synthesis],
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(200);
+    const detail = (await request(`/api/themes/${t.id}`)).body;
+    expect(detail).toMatchObject({
+      insightCount: 3,
+      conversationCount: 2,
+      seeds: ["Economics", "Progression"],
+    });
+    expect(detail.latestInsightAt).toBeTruthy();
+    expect(detail.insights.find((i: any) => i.id === synthesis)).toMatchObject({
+      isSynthesis: true,
+      seeds: [],
+      people: [],
+    });
+    expect((await request(`/api/themes/${other.id}`)).body.insightCount).toBe(
+      1,
+    );
+    expect(
+      (await request(`${path}/${synthesis}`, undefined, "DELETE")).status,
+    ).toBe(200);
+    expect(
+      (await request(`${path}/${synthesis}`, undefined, "DELETE")).status,
+    ).toBe(200);
+    expect((await request(`/api/themes/${t.id}`)).body.insightCount).toBe(2);
+    expect((await request(`/api/themes/${other.id}`)).body.insightCount).toBe(
+      1,
+    );
+    expect(await snapshot()).toEqual(before);
+  });
+  it("deduplicates original conversations through nested/overlapping synthesis lineage rather than counting Insights", async () => {
+    await start();
+    const sourceA = await save();
+    const sourceB = await save({ originalText: "Independent evidence" });
+    const a = await approved(sourceA.id);
+    const b = await approved(sourceA.id, {
+      title: "Second learning from same conversation",
+      seeds: [],
+    });
+    const c = await approved(sourceB.id, { seeds: ["Predictability"] });
+    const synth = async (sourceIds: string[]) => {
+      const id = randomUUID();
+      expect(
+        (
+          await request("/api/syntheses", {
+            id,
+            title: "Synthesis",
+            summary: "Larger observation",
+            takeaways: [],
+            seeds: [],
+            sourceIds,
+            confirmed: true,
+          })
+        ).status,
+      ).toBe(201);
+      return id;
+    };
+    const s = await synth([a, b]);
+    const nested = await synth([s, c]);
+    const t = await theme();
+    await request(`/api/themes/${t.id}/insights`, {
+      insightIds: [a, b, s, nested],
+      confirmed: true,
+    });
+    const result = (await request(`/api/themes/${t.id}`)).body;
+    expect(result.insightCount).toBe(4);
+    expect(result.conversationCount).toBe(2);
+    // Existing malformed legacy cycles must terminate, not inflate descriptive recurrence.
+    await db.query("INSERT INTO insight_lineage VALUES($1,$2,$3)", [
+      owner,
+      a,
+      nested,
+    ]);
+    expect((await request(`/api/themes/${t.id}`)).body.conversationCount).toBe(
+      2,
+    );
+  });
+  it("enforces owner isolation for Themes, association, removal, candidates and recursive provenance", async () => {
+    await start();
+    const ownSource = await save();
+    const own = await approved(ownSource.id);
+    const t = await theme();
+    const other = randomUUID();
+    await db.query("INSERT INTO users(id) VALUES($1)", [other]);
+    const foreignStore = new WorkspaceStore(
+      {
+        query: (s, v) => db.query(s, v),
+        transaction: (work) =>
+          db.transaction((tx) => work((s, v) => tx.query(s, v))),
+      },
+      other,
+    );
+    const foreignTheme = {
+      id: randomUUID(),
+      name: t.name,
+      description: "",
+      confirmed: true as const,
+    };
+    await foreignStore.themes().create(foreignTheme);
+    const foreignSource = randomUUID();
+    await foreignStore.create(foreignSource, source);
+    const foreign = randomUUID();
+    await foreignStore.approve(foreignSource, foreign, {
+      ...fields,
+      seeds: [],
+      themes: [],
+    });
+    expect((await request("/api/themes")).body).toHaveLength(1);
+    expect((await request(`/api/themes/${foreignTheme.id}`)).status).toBe(404);
+    expect((await request("/api/themes", foreignTheme)).status).toBe(409);
+    expect(
+      (
+        await request(`/api/themes/${foreignTheme.id}/insights`, {
+          insightIds: [own],
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request(`/api/themes/${t.id}/insights`, {
+          insightIds: [own, foreign],
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(404);
+    expect((await request(`/api/themes/${t.id}`)).body.insightCount).toBe(0);
+    expect(
+      (
+        await request(
+          `/api/themes/${foreignTheme.id}/insights/${foreign}`,
+          undefined,
+          "DELETE",
+        )
+      ).status,
+    ).toBe(404);
+    await request(`/api/themes/${t.id}/insights`, {
+      insightIds: [own],
+      confirmed: true,
+    });
+    expect((await request(`/api/themes/${t.id}`)).body.conversationCount).toBe(
+      1,
+    );
+    expect(
+      (await request("/api/insights")).body.map((i: any) => i.id),
+    ).not.toContain(foreign);
+    expect(
+      (
+        await request(
+          `/api/themes/${t.id}/insights/${foreign}`,
+          undefined,
+          "DELETE",
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (await foreignStore.themes().get(foreignTheme.id)).insightCount,
+    ).toBe(0);
+  });
+  it("rejects unapproved/missing Insights, malformed membership and non-explicit association without partial writes", async () => {
+    await start();
+    const saved = await save();
+    const own = await approved(saved.id);
+    const draft = randomUUID();
+    await db.query(
+      "INSERT INTO insights(id,user_id,title,summary,creation_method) VALUES($1,$2,'Draft','Unapproved','ai_suggested')",
+      [draft, owner],
+    );
+    const t = await theme();
+    const path = `/api/themes/${t.id}/insights`;
+    for (const ids of [
+      [own, draft],
+      [own, randomUUID()],
+    ])
+      expect(
+        (await request(path, { insightIds: ids, confirmed: true })).status,
+      ).toBe(404);
+    for (const body of [
+      { insightIds: [], confirmed: true },
+      { insightIds: [own, own], confirmed: true },
+      { insightIds: [own], confirmed: false },
+    ])
+      expect((await request(path, body)).status).toBe(400);
+    expect((await request(`/api/themes/${t.id}`)).body.insightCount).toBe(0);
+    expect(
+      (
+        await request(
+          `/api/themes/${randomUUID()}/insights/${own}`,
+          undefined,
+          "DELETE",
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request("/api/themes", {
+          id: randomUUID(),
+          name: "Valid",
+          description: "x".repeat(2001),
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(400);
+  });
+  it("enforces database uniqueness, nonempty names, same-owner links and relationship-only removal", async () => {
+    await start();
+    const t = await theme();
+    const s = await save();
+    const own = await approved(s.id);
+    await expect(
+      db.query("INSERT INTO themes(user_id,name) VALUES($1,$2)", [
+        owner,
+        "forecast EVIDENCE",
+      ]),
+    ).rejects.toMatchObject({ code: "23505" });
+    await expect(
+      db.query("INSERT INTO themes(user_id,name) VALUES($1,$2)", [
+        owner,
+        " \n\t ",
+      ]),
+    ).rejects.toMatchObject({ code: "23514" });
+    const other = (
+      await db.query<{ id: string }>(
+        "INSERT INTO users DEFAULT VALUES RETURNING id",
+      )
+    ).rows[0].id;
+    await expect(
+      db.query("INSERT INTO theme_memberships VALUES($1,$2,$3)", [
+        other,
+        t.id,
+        own,
+      ]),
+    ).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      db.query("INSERT INTO theme_memberships VALUES($1,$2,$3)", [
+        owner,
+        t.id,
+        randomUUID(),
+      ]),
+    ).rejects.toMatchObject({ code: "23503" });
+    await db.query("INSERT INTO theme_memberships VALUES($1,$2,$3)", [
+      owner,
+      t.id,
+      own,
+    ]);
+    await expect(
+      db.query("INSERT INTO theme_memberships VALUES($1,$2,$3)", [
+        owner,
+        t.id,
+        own,
+      ]),
+    ).rejects.toMatchObject({ code: "23505" });
+    await expect(
+      db.query("DELETE FROM insights WHERE id=$1", [own]),
+    ).rejects.toMatchObject({ code: "23503" });
+    await store.themes().remove(t.id, own);
+    expect(
+      (await db.query("SELECT id FROM insights WHERE id=$1", [own])).rows,
+    ).toHaveLength(1);
   });
 });

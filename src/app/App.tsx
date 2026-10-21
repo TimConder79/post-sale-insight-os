@@ -1,7 +1,8 @@
+import { ThemesWorkspace } from "../themes/ThemesWorkspace";
 import { ConnectionsWorkspace } from "../connections/ConnectionsWorkspace";
 import { NavLink, Route, Routes } from "react-router-dom";
 
-import { InsightsLibrary, InsightsFuture } from "../library/InsightsLibrary";
+import { InsightsLibrary } from "../library/InsightsLibrary";
 import { PostWorkspace } from "../workspace/PostWorkspace";
 
 const screens = [
@@ -58,10 +59,7 @@ export function App() {
               }
             />
           ))}
-          <Route
-            path="/insights/themes"
-            element={<InsightsFuture title="Themes" />}
-          />
+          <Route path="/insights/themes" element={<ThemesWorkspace />} />
           <Route
             path="*"
             element={

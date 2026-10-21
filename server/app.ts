@@ -1,3 +1,4 @@
+import { createTheme, themeAssociation } from "../src/shared/themes.ts";
 import { connectionInput, synthesisInput } from "../src/shared/connections.ts";
 import { libraryQuery } from "../src/shared/library.ts";
 import express from "express";
@@ -59,6 +60,37 @@ export function createApp(
     },
     express.json({ limit: "1mb" }),
   );
+  app.get("/api/themes", async (_req, res) => {
+    res.json(await store.themes().list());
+  });
+  app.post("/api/themes", async (req, res) => {
+    res
+      .status(201)
+      .json(await store.themes().create(createTheme.parse(req.body)));
+  });
+  app.get("/api/themes/:id", async (req, res) => {
+    res.json(await store.themes().get(z.uuid().parse(req.params.id)));
+  });
+  app.post("/api/themes/:id/insights", async (req, res) => {
+    res.json(
+      await store
+        .themes()
+        .associate(
+          z.uuid().parse(req.params.id),
+          themeAssociation.parse(req.body).insightIds,
+        ),
+    );
+  });
+  app.delete("/api/themes/:id/insights/:insightId", async (req, res) => {
+    res.json(
+      await store
+        .themes()
+        .remove(
+          z.uuid().parse(req.params.id),
+          z.uuid().parse(req.params.insightId),
+        ),
+    );
+  });
   app.get("/api/connections", async (_req, res) => {
     res.json(await store.connections().list());
   });
