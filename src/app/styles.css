@@ -347,3 +347,59 @@ select {
 .connection-map .react-flow__handle {
   opacity: 0;
 }
+
+.themes-grid {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) minmax(0, 2fr);
+  gap: 2rem;
+  margin-top: 1.5rem;
+}
+.themes-grid > section {
+  min-width: 0;
+}
+.theme-create {
+  max-width: 50rem;
+  margin-bottom: 1.5rem;
+}
+.theme-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+.theme-list > li {
+  border: 1px solid #cbd5cf;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+}
+.theme-list h3 {
+  margin-top: 0.5rem;
+}
+.theme-select {
+  font-size: 1.1rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  white-space: normal;
+}
+.theme-select[aria-current="true"] {
+  outline: 2px solid #355c50;
+  outline-offset: 3px;
+}
+.theme-candidates {
+  max-height: 36rem;
+  overflow-y: auto;
+}
+@media (max-width: 800px) {
+  .themes-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.theme-list small {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.theme-list a {
+  color: #233c36;
+}

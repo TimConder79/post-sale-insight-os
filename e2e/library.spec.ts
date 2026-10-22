@@ -203,10 +203,10 @@ test("empty, partial metadata and database failure states are clear and retryabl
     .getByRole("link", { name: "Themes", exact: true })
     .click();
   await expect(
-    page.getByText(
-      "Themes is planned for a later phase. The Insights Library is available now.",
-      { exact: true },
-    ),
+    page.getByRole("heading", { name: "Themes", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save Theme", exact: true }),
   ).toBeVisible();
   await page
     .getByRole("navigation", { name: "Insights navigation" })

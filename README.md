@@ -1,6 +1,6 @@
 # Post-Sale Insight OS
 
-A single-user workspace for preserving manually supplied conversations and capturing approved learning. Read [AGENTS.md](AGENTS.md) and the canonical product documents before making changes. Phase 1 implements **Post Workspace**; Phase 2 adds the **Insights Library**; Phase 3 adds **Connections and manual Synthesis**. Other workflows remain placeholders.
+A single-user workspace for preserving manually supplied conversations and capturing approved learning. Read [AGENTS.md](AGENTS.md) and the canonical product documents before making changes. Phase 1 implements **Post Workspace**; Phase 2 adds the **Insights Library**; Phase 3 adds **Connections and manual Synthesis**; Phase 4 adds **Themes**. Other workflows remain placeholders.
 
 ## Setup
 
@@ -64,7 +64,7 @@ Open **Insights Library** to browse this workspace owner's approved Insights. Ti
 
 Select an Insight to see its text, optional collapsed Takeaways, notes and a separate source-provenance section. Original source text and relevant comments are read-only and unchanged; missing person/company/URL metadata is supported. **Open source in Post Workspace** follows `insight_sources`; **Back to selected Insight** restores the Library selection and filters. Search/filter/selection live in the Library URL. Selecting a detail moves keyboard focus to its heading so it is reachable when panels stack on mobile.
 
-The Library is read-only: it uses existing records and schema with no migration or data re-entry. Connections opens the Phase 3 workspace; Themes remains a clearly labeled future state. No general Insight editor, new favorite controls or Themes behavior is implemented. The small-MVP list is not paginated; detailed source text is requested only when an Insight is selected. Automated baseline fixtures are synthetic and confined to test databases; no production-like user records are seeded or recreated.
+The Library is read-only: it uses existing records and schema with no migration or data re-entry. Connections opens the Phase 3 workspace; Themes opens the Phase 4 workspace. No general Insight editor or new favorite controls are implemented. The small-MVP list is not paginated; detailed source text is requested only when an Insight is selected. Automated baseline fixtures are synthetic and confined to test databases; no production-like user records are seeded or recreated.
 
 ## Connections and synthesis (Phase 3)
 
@@ -73,6 +73,16 @@ Run `npm run db:migrate` before using this branch. Open **Connections** under In
 **List** shows endpoint titles, Insight text, Seeds and links, and offers **Disconnect** with confirmation. Disconnect removes only the relationship. **Map** automatically arranges approved Insights and saved relationships, with pan/zoom/fit and session-only dragging. The Insight search filters visible Map nodes/edges; List retains all saved relationships. Click a node to open its Insight. Parallel relationships have distinct labeled curves. The graph is lazy-loaded and an error boundary offers List if loading/rendering fails. There are no permanent canvas positions, connection drawing handles or whiteboard tools.
 
 Select at least two candidate Insights and choose **Synthesize a larger insight**. The selected source titles/text remain visible while you write the new title and Insight text. Seeds and Takeaways are optional. **Approve & save synthesis** creates a normal approved user Insight and lineage to every source, without modifying any source Insight or source conversation. Failed saves retain the draft. No connection or shared Seed is required, and no AI provider or development suggestion is needed. The resulting Insight opens in Library and is labeled as synthesized, with **Synthesized from** links. Follow those links to the original source Insights and their exact conversation provenance; nested synthesis retains this chain. No deletion/editing of source Insights is introduced.
+
+## Themes (Phase 4)
+
+Open **Insights → Themes**. Create a named emerging subject with an optional working definition, then explicitly select and add existing approved Insights. Underlying Insight text, Seeds/Unclassified, synthesis status and available person/company metadata remain visible; links open Library provenance. Search Themes by name/definition, or search/filter member Insights and candidates by Seed. Remove an association with confirmation without altering the Insight. A Theme may start empty, cross Seeds, or share Insights with other Themes. No AI is required, including with `AI_MODE=unavailable`.
+
+Overview is alphabetical and shows direct Insight count, represented Seeds, latest associated Insight date, and distinct original source-conversation count. The conversation count follows approved synthesis lineage recursively and deduplicates overlapping provenance. These counts describe recorded recurrence, not importance or external validation.
+
+Apply migration `004_themes.sql` with `npm run db:migrate`. It adds Theme objects and owner-scoped membership tables only; existing records, including Phase 3 test syntheses and legacy text labels in `insight_themes`, remain untouched. Legacy labels are not silently converted. Names are compared case-insensitively ignoring surrounding ordinary spaces per owner, while authored text is preserved. No rename, merge, deletion, automatic tagging, clustering, or real AI suggestions are introduced.
+
+API: `GET/POST /api/themes`, `GET /api/themes/:id`, `POST /api/themes/:id/insights` (explicit batch approval), and `DELETE /api/themes/:id/insights/:insightId`. Owner comes exclusively from server configuration; approval and ownership are checked server-side. No browser database credentials or new environment variables are needed.
 
 ## API and AI boundary
 
@@ -94,7 +104,7 @@ The provider-neutral `Assistant.run` boundary in `server/ai.ts` accepts exact so
 
 ## Database migrations
 
-`database/migrations/001_initial.sql` remains unchanged. The Phase 1 follow-up migration `002_conversation_responses.sql` adds a separate latest-response row per conversation with owner provenance and a save timestamp. Existing conversations without a response row reopen with empty response text. Migration `003_connection_uniqueness.sql` adds an equivalent-confirmed-connection unique index without changing existing rows. Conflicting legacy duplicates cause a migration failure and require explicit review; no automated destructive deduplication occurs. The existing schema covers all approved entities, including source/Insight separation, `insight_sources`, independent connections and synthesis lineage. Only people, source conversations, conversation responses and approved Insights plus their seed/theme/provenance joins are used by this phase.
+`database/migrations/001_initial.sql` remains unchanged. The Phase 1 follow-up migration `002_conversation_responses.sql` adds a separate latest-response row per conversation with owner provenance and a save timestamp. Existing conversations without a response row reopen with empty response text. Migration `003_connection_uniqueness.sql` adds an equivalent-confirmed-connection unique index without changing existing rows. Conflicting legacy duplicates cause a migration failure and require explicit review; no automated destructive deduplication occurs. Migration `004_themes.sql` adds durable Theme objects and explicit memberships without converting legacy labels or altering existing records. The schema retains source/Insight separation, `insight_sources`, independent connections and synthesis lineage. Themes do not alter any of these records or Seed classification.
 
 ```sh
 npm run db:migrate
@@ -142,10 +152,11 @@ The Node server serves `dist/` and the same local API, including direct route lo
 - `src/workspace/`: Phase 1 workspace UI and API client.
 - `src/library/`: Library, source provenance and synthesis lineage.
 - `src/connections/`: connection List, lazy Map, and manual synthesis.
+- `src/themes/`: manual Theme creation, overview/detail, and explicit membership.
 - `src/shared/`: credential-free request/output schemas and types.
 - `server/`: local API, PostgreSQL transactions and provider-neutral development assistant.
-- `database/`: original SQL migration and integrity tests.
+- `database/`: additive SQL migrations and integrity tests.
 - `scripts/`: server-only migration tooling.
 - `e2e/`: real-browser acceptance checks against PostgreSQL.
 
-See [DECISIONS.md](DECISIONS.md) for material choices. Themes, Weekly Review, content generation, real AI and other later workflows remain deferred. The next slice requires review and explicit approval.
+See [DECISIONS.md](DECISIONS.md) for material choices. Weekly Review, content generation, real AI and other later workflows remain deferred. The next slice requires review and explicit approval.
