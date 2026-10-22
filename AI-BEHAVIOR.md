@@ -27,3 +27,8 @@ AI reduces synthesis work. It does not become the authority on what the user bel
 3. Five Seeds / governing strategy.
 4. Canonical Post-Sale Operating System methodology.
 5. General model knowledge only when needed and not in conflict with the above.
+
+## Phase 5A runtime boundary
+Real AI is opt-in through the server-only Assistant adapter. Analysis reads exact saved source; Connection/Theme proposals compare approved owner-scoped records only; synthesis uses exactly the user's selected approved Insights. AI drafts and raw sources are never promoted into approved context for other workflows. Theme proposals reference existing durable Themes only; source analysis creates/assigns none. Zero Seeds, Connections or Theme proposals is valid.
+
+Structured outputs are validated before display. Every durable Insight, Connection, Theme association and synthesis requires explicit approval. Server-issued receipts verify AI provenance and selected-source scope; creation methods are derived server-side, not accepted from the client. Real generated response/synthesis text requires explicit application before replacing an editor. AI failure preserves drafts/selections and produces no fabricated fallback. `AI_MODE=unavailable` preserves all manual workflows. See DECISIONS.md and README.md for configuration, bounds and local acceptance.

@@ -97,10 +97,15 @@ export function PostWorkspace() {
   const [aiMode, setAiMode] = useState("unavailable");
   const [analysis, setAnalysis] = useState<Analysis>();
   const [comment, setComment] = useState("");
+  const [responseOrigin, setResponseOrigin] = useState("manual");
   const [insight, setInsight] = useState<InsightInput>(emptyInsight);
   const [takeawaysText, setTakeawaysText] = useState("");
   const [themesText, setThemesText] = useState("");
-  const [draftOrigin, setDraftOrigin] = useState<"manual" | "stub">("manual");
+  const [draftOrigin, setDraftOrigin] = useState<"manual" | "stub" | "openai">(
+    "manual",
+  );
+  const [aiReceipt, setAiReceipt] = useState<string>();
+  const [aiEdited, setAiEdited] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -137,6 +142,7 @@ export function PostWorkspace() {
           sourceId.current = conversation.id;
           setSaved(conversation);
           setComment(conversation.response);
+          setResponseOrigin("manual");
           setSource({
             originalText: conversation.originalText,
             relevantComments: conversation.relevantComments,
@@ -180,6 +186,8 @@ export function PostWorkspace() {
     setTakeawaysText("");
     setThemesText("");
     setDraftOrigin("manual");
+    setAiReceipt(undefined);
+    setAiEdited(false);
     insightId.current = crypto.randomUUID();
   }, []);
   useEffect(() => {
@@ -193,6 +201,7 @@ export function PostWorkspace() {
       setSaved(undefined);
       setAnalysis(undefined);
       setComment("");
+      setResponseOrigin("manual");
       resetDraft();
       setError("");
       setNotice("");
@@ -223,6 +232,7 @@ export function PostWorkspace() {
     setSaved(undefined);
     setAnalysis(undefined);
     setComment("");
+    setResponseOrigin("manual");
     resetDraft();
     setError("");
     setNotice("");
@@ -300,10 +310,13 @@ export function PostWorkspace() {
       });
       if (current !== generation.current) return;
       setAnalysis(result);
-      if (!comment || onlyComment) setComment(result.comment);
+      if (result.mode === "stub" && (!comment || onlyComment))
+        setComment(result.comment);
       if (!onlyComment)
         setNotice(
-          "Preview only — these are deterministic stub suggestions, not AI output.",
+          result.mode === "stub"
+            ? "Preview only — these are deterministic stub suggestions, not AI output."
+            : "AI suggestions are unconfirmed. Review and explicitly apply a draft before approving.",
         );
     });
   }
@@ -318,6 +331,8 @@ export function PostWorkspace() {
     setTakeawaysText(analysis.insight.takeaways.join("\n"));
     setThemesText(analysis.insight.themes.join("\n"));
     setDraftOrigin(analysis.mode);
+    setAiReceipt(analysis.aiReceipt);
+    setAiEdited(false);
     insightId.current = crypto.randomUUID();
   }
   async function approve() {
@@ -344,6 +359,7 @@ export function PostWorkspace() {
         saved.id,
         insightId.current,
         fields.data,
+        aiReceipt,
       );
       if (current !== generation.current) return;
       setSaved(updated);
@@ -532,11 +548,38 @@ export function PostWorkspace() {
           <p>
             {aiMode === "stub"
               ? "Preview mode — deterministic stub, not real AI. Review every word."
-              : "AI is not configured. Save source and capture a manual Insight at any time."}
+              : aiMode === "openai"
+                ? "AI proposes. You decide. Generated drafts remain unconfirmed until you explicitly use and approve them."
+                : "AI is not configured. Save source and capture a manual Insight at any time."}
           </p>
           {analysis && (
             <div className="suggestion">
-              <h3>Suggested lenses &amp; themes</h3>
+              <h3>
+                Suggested lenses{" "}
+                {analysis.mode === "stub" ? "& themes" : "— unconfirmed"}
+              </h3>
+              {analysis.mode === "openai" && (
+                <>
+                  <h3>AI-proposed response — unconfirmed</h3>
+                  <p className="preserve-text">{analysis.comment}</p>
+                  <button
+                    disabled={!!busy}
+                    onClick={() => {
+                      if (
+                        comment &&
+                        !window.confirm(
+                          "Replace your current response draft with the AI draft?",
+                        )
+                      )
+                        return;
+                      setComment(analysis.comment);
+                      setResponseOrigin("ai_suggested");
+                    }}
+                  >
+                    Use response draft
+                  </button>
+                </>
+              )}
               {!analysis.seeds.length && (
                 <p>No seed suggested. A lens is optional.</p>
               )}
@@ -563,11 +606,23 @@ export function PostWorkspace() {
             </div>
           )}
           <label htmlFor="comment-draft">Our response</label>
+          {responseOrigin !== "manual" && (
+            <p>
+              {responseOrigin === "ai_then_edited"
+                ? "Response draft edited after AI."
+                : "AI-suggested response draft — review before saving."}{" "}
+              Response history stores text only; saving does not imply posting.
+            </p>
+          )}
           <textarea
             id="comment-draft"
             rows={16}
             value={comment}
-            onChange={(e) => setComment(e.target.value)}
+            onChange={(e) => {
+              if (responseOrigin !== "manual")
+                setResponseOrigin("ai_then_edited");
+              setComment(e.target.value);
+            }}
             disabled={!!busy || loading}
           />
           <p>
@@ -636,8 +691,23 @@ export function PostWorkspace() {
           <p>
             {draftOrigin === "stub"
               ? "Preview draft · not AI output. Replace with your learning before approval."
-              : "Manual draft · unconfirmed until you approve and save."}
+              : draftOrigin === "openai"
+                ? aiEdited
+                  ? "AI draft edited by you · unconfirmed until approval."
+                  : "AI-suggested draft · unconfirmed until approval."
+                : "Manual draft · unconfirmed until you approve and save."}
           </p>
+          {aiReceipt && (
+            <button
+              disabled={!!busy}
+              onClick={() => {
+                setAiReceipt(undefined);
+                setDraftOrigin("manual");
+              }}
+            >
+              Continue as a manual draft
+            </button>
+          )}
           {analysis && (
             <details className="suggestion">
               <summary>Suggested Insight (unconfirmed)</summary>
@@ -654,18 +724,20 @@ export function PostWorkspace() {
               id="insight-title-editor"
               rows={3}
               value={insight.title}
-              onChange={(e) =>
-                setInsight({ ...insight, title: e.target.value })
-              }
+              onChange={(e) => {
+                setAiEdited(true);
+                setInsight({ ...insight, title: e.target.value });
+              }}
             />
             <label htmlFor="insight-summary">Insight summary</label>
             <textarea
               id="insight-summary"
               rows={7}
               value={insight.summary}
-              onChange={(e) =>
-                setInsight({ ...insight, summary: e.target.value })
-              }
+              onChange={(e) => {
+                setAiEdited(true);
+                setInsight({ ...insight, summary: e.target.value });
+              }}
             />
             <details>
               <summary>Takeaways, seeds &amp; themes (optional)</summary>
@@ -673,7 +745,10 @@ export function PostWorkspace() {
                 Takeaways (one per line)
                 <textarea
                   value={takeawaysText}
-                  onChange={(e) => setTakeawaysText(e.target.value)}
+                  onChange={(e) => {
+                    setAiEdited(true);
+                    setTakeawaysText(e.target.value);
+                  }}
                 />
               </label>
               <fieldset>
@@ -683,14 +758,15 @@ export function PostWorkspace() {
                     <input
                       type="checkbox"
                       checked={insight.seeds.includes(seed)}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        setAiEdited(true);
                         setInsight({
                           ...insight,
                           seeds: e.target.checked
                             ? [...insight.seeds, seed]
                             : insight.seeds.filter((value) => value !== seed),
-                        })
-                      }
+                        });
+                      }}
                     />
                     {seed}
                   </label>
@@ -700,7 +776,10 @@ export function PostWorkspace() {
                 Themes (one per line)
                 <textarea
                   value={themesText}
-                  onChange={(e) => setThemesText(e.target.value)}
+                  onChange={(e) => {
+                    setAiEdited(true);
+                    setThemesText(e.target.value);
+                  }}
                 />
               </label>
             </details>
@@ -720,7 +799,11 @@ export function PostWorkspace() {
               <h3>Approved Insights linked to this source</h3>
               {saved.insights.map((item) => (
                 <article key={item.id}>
-                  <h4>{item.title}</h4>
+                  <h4>
+                    <Link to={`/insights?insight=${item.id}`}>
+                      {item.title}
+                    </Link>
+                  </h4>
                   <p className="preserve-text">{item.summary}</p>
                   {!!item.takeaways.length && (
                     <ul>

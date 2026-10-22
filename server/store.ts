@@ -199,7 +199,12 @@ export class WorkspaceStore {
     if (!rows[0]) throw new WorkspaceError(404, "Conversation not found.");
     return rows[0];
   }
-  async approve(conversationId: string, id: string, fields: InsightInput) {
+  async approve(
+    conversationId: string,
+    id: string,
+    fields: InsightInput,
+    method: ApprovedInsight["creationMethod"] = "user",
+  ) {
     await this.get(conversationId);
     await this.db.transaction(async (query) => {
       await query("SELECT pg_advisory_xact_lock(hashtext($1))", [id]);
@@ -225,7 +230,7 @@ export class WorkspaceStore {
           fields.title,
           fields.summary,
           fields.takeaways,
-          "user",
+          method,
         ],
       );
       await query(

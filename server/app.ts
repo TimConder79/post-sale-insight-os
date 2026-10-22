@@ -1,3 +1,9 @@
+import { AiWorkflow, selectedSources } from "./ai-workflow.ts";
+import {
+  connectionScope,
+  insightValue,
+  synthesisScope,
+} from "./ai-receipts.ts";
 import { createTheme, themeAssociation } from "../src/shared/themes.ts";
 import { connectionInput, synthesisInput } from "../src/shared/connections.ts";
 import { libraryQuery } from "../src/shared/library.ts";
@@ -23,6 +29,18 @@ export function createApp(
   options: { port: number; devOrigin: string; serveDist?: string },
 ) {
   const app = express();
+  const ai = new AiWorkflow(store, assistant);
+  async function suggest<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof WorkspaceError) throw error;
+      throw new WorkspaceError(
+        503,
+        "AI assistance failed or returned invalid output. Your drafts, selections and saved records are unchanged. Retry or continue manually.",
+      );
+    }
+  }
   app.disable("x-powered-by");
   app.use((req, res, next) => {
     const allowedHosts = [
@@ -60,6 +78,17 @@ export function createApp(
     },
     express.json({ limit: "1mb" }),
   );
+  app.post("/api/assist/synthesis", async (req, res) => {
+    const { sourceIds } = selectedSources.parse(req.body);
+    res.json(await suggest(() => ai.draft(sourceIds)));
+  });
+  app.post("/api/assist/knowledge", async (req, res) => {
+    const { insightId } = z
+      .object({ insightId: z.uuid().transform((id) => id.toLowerCase()) })
+      .strict()
+      .parse(req.body);
+    res.json(await suggest(() => ai.knowledge(insightId)));
+  });
   app.get("/api/themes", async (_req, res) => {
     res.json(await store.themes().list());
   });
@@ -72,14 +101,21 @@ export function createApp(
     res.json(await store.themes().get(z.uuid().parse(req.params.id)));
   });
   app.post("/api/themes/:id/insights", async (req, res) => {
-    res.json(
-      await store
-        .themes()
-        .associate(
-          z.uuid().parse(req.params.id),
-          themeAssociation.parse(req.body).insightIds,
-        ),
-    );
+    const id = z.uuid().parse(req.params.id).toLowerCase();
+    const input = themeAssociation.parse(req.body);
+    if (input.aiReceipt) {
+      if (input.insightIds.length !== 1)
+        throw new WorkspaceError(
+          400,
+          "Approve Theme suggestions individually.",
+        );
+      ai.receipts.method(
+        input.aiReceipt,
+        `theme:${id}:${input.insightIds[0]}`,
+        {},
+      );
+    }
+    res.json(await store.themes().associate(id, input.insightIds));
   });
   app.delete("/api/themes/:id/insights/:insightId", async (req, res) => {
     res.json(
@@ -95,19 +131,25 @@ export function createApp(
     res.json(await store.connections().list());
   });
   app.post("/api/connections", async (req, res) => {
-    res
-      .status(201)
-      .json(await store.connections().create(connectionInput.parse(req.body)));
+    const input = connectionInput.parse(req.body);
+    const method = ai.receipts.method(
+      input.aiReceipt,
+      connectionScope(input.insightA, input.insightB, input.relationship),
+      {},
+    );
+    res.status(201).json(await store.connections().create(input, method));
   });
   app.delete("/api/connections/:id", async (req, res) => {
     res.json(await store.connections().remove(z.uuid().parse(req.params.id)));
   });
   app.post("/api/syntheses", async (req, res) => {
-    res
-      .status(201)
-      .json(
-        await store.connections().synthesize(synthesisInput.parse(req.body)),
-      );
+    const input = synthesisInput.parse(req.body);
+    const method = ai.receipts.method(
+      input.aiReceipt,
+      synthesisScope(input.sourceIds),
+      insightValue(input),
+    );
+    res.status(201).json(await store.connections().synthesize(input, method));
   });
   app.get("/api/insights", async (req, res) => {
     res.json(await store.library().list(libraryQuery.parse(req.query)));
@@ -147,6 +189,11 @@ export function createApp(
           seeds: input.seeds,
           themes: input.themes,
         }),
+        ai.receipts.method(
+          input.aiReceipt,
+          `source:${conversationId.toLowerCase()}`,
+          insightValue(input),
+        ),
       ),
     );
   });
@@ -167,7 +214,18 @@ export function createApp(
       const suggestion = suggestionSchema.parse(
         await assistant.run(input, approvedKnowledge),
       );
-      res.json({ ...suggestion, mode: assistant.mode });
+      res.json({
+        ...suggestion,
+        mode: assistant.mode,
+        ...(assistant.mode === "openai" && input.conversationId
+          ? {
+              aiReceipt: ai.receipts.issue(
+                `source:${input.conversationId.toLowerCase()}`,
+                insightValue(suggestion.insight),
+              ),
+            }
+          : {}),
+      });
     } catch (error) {
       if (error instanceof WorkspaceError) throw error;
       throw new WorkspaceError(

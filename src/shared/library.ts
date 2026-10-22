@@ -16,6 +16,7 @@ export type LibraryItem = {
   people: { name: string; company: string | null }[];
   createdAt: string;
   favorite: boolean;
+  creationMethod?: "user" | "ai_suggested" | "ai_then_edited";
   isSynthesis: boolean;
 };
 export type LibraryDetail = LibraryItem & {

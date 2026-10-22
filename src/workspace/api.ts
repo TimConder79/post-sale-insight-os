@@ -31,7 +31,8 @@ async function request<T>(
   return result as T;
 }
 export const api = {
-  status: () => request<{ aiMode: "unavailable" | "stub" }>("/status"),
+  status: () =>
+    request<{ aiMode: "unavailable" | "stub" | "openai" }>("/status"),
   list: () =>
     request<{ id: string; preview: string; createdAt: string }[]>(
       "/conversations",
@@ -45,11 +46,17 @@ export const api = {
       { text },
       "PUT",
     ),
-  approve: (conversationId: string, id: string, fields: InsightInput) =>
+  approve: (
+    conversationId: string,
+    id: string,
+    fields: InsightInput,
+    aiReceipt?: string,
+  ) =>
     request<Conversation>(`/conversations/${conversationId}/insights`, {
       ...fields,
       id,
       confirmed: true,
+      aiReceipt,
     }),
   assist: (body: AnalysisRequest) => request<Analysis>("/assist", body),
 };

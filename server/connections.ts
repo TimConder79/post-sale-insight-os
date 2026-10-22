@@ -26,14 +26,17 @@ export class ConnectionsStore {
   async list(): Promise<Connection[]> {
     return (
       await this.db.query<Connection>(
-        `SELECT c.id, c.insight_a AS "insightA", c.insight_b AS "insightB", c.relationship_type AS relationship, c.created_at AS "createdAt"
+        `SELECT c.creation_method AS "creationMethod", c.id, c.insight_a AS "insightA", c.insight_b AS "insightB", c.relationship_type AS relationship, c.created_at AS "createdAt"
       FROM insight_connections c JOIN insights a ON a.id=c.insight_a AND a.user_id=c.user_id JOIN insights b ON b.id=c.insight_b AND b.user_id=c.user_id
       WHERE c.user_id=$1 AND c.user_confirmed=true AND a.user_confirmed=true AND b.user_confirmed=true ORDER BY c.created_at,c.id`,
         [this.owner],
       )
     ).rows;
   }
-  async create(input: ConnectionInput) {
+  async create(
+    input: ConnectionInput,
+    method: "user" | "ai_suggested" | "ai_then_edited" = "user",
+  ) {
     let { insightA, insightB } = input;
     if (isSymmetric(input.relationship) && insightA > insightB)
       [insightA, insightB] = [insightB, insightA];
@@ -63,7 +66,7 @@ export class ConnectionsStore {
           return { id: input.id };
         }
         await query(
-          `INSERT INTO insight_connections (id,user_id,insight_a,insight_b,relationship_type,direction,creation_method,user_confirmed) VALUES($1,$2,$3,$4,$5,$6,'user',true)`,
+          `INSERT INTO insight_connections (id,user_id,insight_a,insight_b,relationship_type,direction,creation_method,user_confirmed) VALUES($1,$2,$3,$4,$5,$6,$7,true)`,
           [
             input.id,
             this.owner,
@@ -71,6 +74,7 @@ export class ConnectionsStore {
             insightB,
             input.relationship,
             isSymmetric(input.relationship) ? "undirected" : "a_to_b",
+            method,
           ],
         );
         return { id: input.id };
@@ -94,7 +98,10 @@ export class ConnectionsStore {
       throw new WorkspaceError(404, "Connection not found.");
     return { id };
   }
-  async synthesize(input: SynthesisInput) {
+  async synthesize(
+    input: SynthesisInput,
+    method: "user" | "ai_suggested" | "ai_then_edited" = "user",
+  ) {
     if (
       input.sourceIds.length < 2 ||
       new Set(input.sourceIds).size !== input.sourceIds.length
@@ -122,7 +129,7 @@ export class ConnectionsStore {
         if (
           existing.user_id !== this.owner ||
           !existing.user_confirmed ||
-          existing.creation_method !== "user" ||
+          existing.creation_method !== method ||
           JSON.stringify({
             title: existing.title,
             summary: existing.summary,
@@ -140,8 +147,15 @@ export class ConnectionsStore {
       // A fresh Insight cannot be its own ancestor; sources must already exist and be approved.
       await this.approved(query, [...input.sourceIds].sort());
       await query(
-        `INSERT INTO insights(id,user_id,title,summary,takeaways,creation_method,user_confirmed) VALUES($1,$2,$3,$4,$5,'user',true)`,
-        [input.id, this.owner, input.title, input.summary, input.takeaways],
+        `INSERT INTO insights(id,user_id,title,summary,takeaways,creation_method,user_confirmed) VALUES($1,$2,$3,$4,$5,$6,true)`,
+        [
+          input.id,
+          this.owner,
+          input.title,
+          input.summary,
+          input.takeaways,
+          method,
+        ],
       );
       for (const id of input.sourceIds)
         await query(

@@ -37,10 +37,11 @@ export const themesApi = {
     request<LibraryItem[]>("/insights", "GET", undefined, signal),
   create: (body: ThemeInput) =>
     request<{ id: string }>("/themes", "POST", body),
-  add: (id: string, insightIds: string[]) =>
+  add: (id: string, insightIds: string[], aiReceipt?: string) =>
     request<{ id: string }>(`/themes/${id}/insights`, "POST", {
       insightIds,
       confirmed: true,
+      aiReceipt,
     }),
   remove: (id: string, insightId: string) =>
     request<{ id: string }>(`/themes/${id}/insights/${insightId}`, "DELETE"),

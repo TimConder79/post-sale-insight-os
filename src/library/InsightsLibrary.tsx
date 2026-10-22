@@ -1,3 +1,4 @@
+import { KnowledgeSuggestions } from "../ai/KnowledgeSuggestions";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useSearchParams } from "react-router-dom";
 import { seeds } from "../shared/workspace";
@@ -248,6 +249,18 @@ export function InsightsLibrary() {
                 </h2>
                 <p className="preserve-text">{detail.summary}</p>
                 <SeedTags values={detail.seeds} />
+                <p>
+                  Approved ·{" "}
+                  {detail.creationMethod === "ai_then_edited"
+                    ? "AI suggestion edited by user"
+                    : detail.creationMethod === "ai_suggested"
+                      ? "AI suggestion approved by user"
+                      : "User-authored"}
+                </p>
+                <details>
+                  <summary>AI-assisted Connections &amp; Themes</summary>
+                  <KnowledgeSuggestions key={detail.id} insightId={detail.id} />
+                </details>
                 <Link to={`/connections?from=${detail.id}`}>
                   Connect this Insight
                 </Link>

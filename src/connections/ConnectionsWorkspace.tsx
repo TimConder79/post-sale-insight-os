@@ -303,6 +303,14 @@ export function ConnectionsWorkspace() {
                   B Seeds:{" "}
                   {byId.get(edge.insightB)?.seeds.join(" · ") || "Unclassified"}
                 </p>
+                <p>
+                  Approved ·{" "}
+                  {edge.creationMethod === "ai_suggested"
+                    ? "AI suggestion approved by user"
+                    : edge.creationMethod === "ai_then_edited"
+                      ? "AI suggestion edited by user"
+                      : "User-authored"}
+                </p>
                 <button
                   disabled={busy}
                   onClick={() => {

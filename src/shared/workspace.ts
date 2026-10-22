@@ -63,6 +63,7 @@ export const approveInsight = insightFields
   .extend({
     id: z.uuid(),
     confirmed: z.literal(true),
+    aiReceipt: z.string().max(5000).optional(),
   })
   .strict();
 export const suggestionSchema = z
@@ -122,5 +123,6 @@ export type Conversation = SourceInput & {
   responseSavedAt: string | null;
 };
 export type Analysis = Suggestion & {
-  mode: "stub";
+  mode: "stub" | "openai";
+  aiReceipt?: string;
 };

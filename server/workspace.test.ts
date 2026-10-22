@@ -1,3 +1,4 @@
+import { openAiAssistant } from "./openai.ts";
 // @vitest-environment node
 import { PGlite } from "@electric-sql/pglite";
 import { randomUUID } from "node:crypto";
@@ -1383,5 +1384,374 @@ describe("Phase 4 Themes", () => {
     expect(
       (await db.query("SELECT id FROM insights WHERE id=$1", [own])).rows,
     ).toHaveLength(1);
+  });
+});
+
+describe("Phase 5A approval boundaries", () => {
+  const proposed = {
+    title: "AI-proposed learning",
+    summary: "Evidence makes progression inspectable.",
+    takeaways: [],
+    seeds: [],
+    themes: [],
+  };
+  const analysis = {
+    seeds: [],
+    themes: [],
+    distinctions: [],
+    questions: [],
+    comment: "AI response draft",
+    insight: proposed,
+  };
+  function real(extra: Partial<Assistant> = {}): Assistant {
+    return {
+      mode: "openai",
+      run: async () => analysis,
+      knowledge: async () => ({ connections: [], themes: [] }),
+      draft: async () => ({
+        title: proposed.title,
+        summary: proposed.summary,
+        takeaways: [],
+        seeds: [],
+        seedRationale: [],
+      }),
+      ...extra,
+    };
+  }
+  async function approvedFixture() {
+    const saved = await save();
+    const id = randomUUID();
+    await store.approve(saved.id, id, { ...fields, seeds: [], themes: [] });
+    return { saved, id };
+  }
+  it("analysis never saves; explicit edited/unchanged approvals retain server-verified attribution and source provenance", async () => {
+    await start(real());
+    const saved = await save();
+    const suggestion = await request("/api/assist", {
+      conversationId: saved.id,
+      source: { ...source, originalText: "Browser-tampered copy" },
+      mode: "regenerate",
+    });
+    expect(suggestion.status).toBe(200);
+    expect(suggestion.body.aiReceipt).toBeTruthy();
+    expect((await db.query("SELECT * FROM insights")).rows).toHaveLength(0);
+    const id = randomUUID();
+    const input = {
+      ...proposed,
+      id,
+      confirmed: true,
+      aiReceipt: suggestion.body.aiReceipt,
+    };
+    expect(
+      (await request(`/api/conversations/${saved.id}/insights`, input)).status,
+    ).toBe(201);
+    expect(
+      (
+        await db.query(
+          "SELECT creation_method,user_confirmed FROM insights WHERE id=$1",
+          [id],
+        )
+      ).rows[0],
+    ).toMatchObject({ creation_method: "ai_suggested", user_confirmed: true });
+    const edited = randomUUID();
+    expect(
+      (
+        await request(`/api/conversations/${saved.id}/insights`, {
+          ...input,
+          id: edited,
+          summary: "User edited the learning",
+        })
+      ).status,
+    ).toBe(201);
+    expect((await store.library().get(edited)).creationMethod).toBe(
+      "ai_then_edited",
+    );
+    expect(
+      (
+        await request(`/api/conversations/${saved.id}/insights`, {
+          ...input,
+          id: randomUUID(),
+          creationMethod: "user",
+        })
+      ).status,
+    ).toBe(400);
+    const other = await save();
+    expect(
+      (
+        await request(`/api/conversations/${other.id}/insights`, {
+          ...input,
+          id: randomUUID(),
+        })
+      ).status,
+    ).toBe(409);
+    expect((await store.get(saved.id)).originalText).toBe(exact);
+  });
+  it("validates approved bounded context, meaningful suggestion targets and individual explicit saves with duplicate protection", async () => {
+    let candidateId = "",
+      themeId = "";
+    const knowledge = vi.fn(async () => ({
+      connections: [
+        {
+          candidateId,
+          relationship: "Supports" as const,
+          direction: "incoming" as const,
+          rationale: "The two approved observations share evidence.",
+        },
+      ],
+      themes: [{ themeId, rationale: "An existing recurring subject." }],
+    }));
+    await start(real({ knowledge }));
+    const a = await approvedFixture(),
+      b = await approvedFixture();
+    const subjectId = a.id;
+    candidateId = b.id;
+    themeId = randomUUID();
+    await store.themes().create({
+      id: themeId,
+      name: "Existing subject",
+      description: "Working definition",
+      confirmed: true,
+    });
+    await store.themes().associate(themeId, [b.id]);
+    const suggestions = await request("/api/assist/knowledge", {
+      insightId: subjectId,
+    });
+    expect(suggestions.status).toBe(200);
+    expect(await store.connections().list()).toHaveLength(0);
+    expect((await store.themes().get(themeId)).insightCount).toBe(1);
+    expect(JSON.stringify(knowledge.mock.calls)).not.toContain(exact);
+    const c = suggestions.body.connections[0];
+    const connection = {
+      id: randomUUID(),
+      insightA: candidateId,
+      insightB: subjectId,
+      relationship: c.relationship,
+      aiReceipt: c.aiReceipt,
+      confirmed: true,
+    };
+    expect(
+      (await request("/api/connections", { ...connection, confirmed: false }))
+        .status,
+    ).toBe(400);
+    expect((await request("/api/connections", connection)).status).toBe(201);
+    expect((await store.connections().list())[0].creationMethod).toBe(
+      "ai_suggested",
+    );
+    expect(
+      (await request("/api/connections", { ...connection, id: randomUUID() }))
+        .status,
+    ).toBe(409);
+    expect(
+      (
+        await request("/api/connections", {
+          ...connection,
+          id: randomUUID(),
+          insightA: subjectId,
+          insightB: candidateId,
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(`/api/themes/${themeId}/insights`, {
+          insightIds: [subjectId],
+          aiReceipt: suggestions.body.themes[0].aiReceipt,
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await store.themes().get(themeId)).insightCount).toBe(2);
+    expect((await store.library().get(subjectId)).seeds).toEqual([]);
+    // A concurrent/existing equivalent relationship is not proposed again.
+    knowledge.mockResolvedValueOnce({
+      connections: [
+        {
+          candidateId,
+          relationship: "Supports",
+          direction: "incoming",
+          rationale: "Still equivalent",
+        },
+      ],
+      themes: [],
+    });
+    const filtered = await request("/api/assist/knowledge", {
+      insightId: subjectId,
+    });
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.connections).toEqual([]);
+    const next = await request("/api/assist/knowledge", {
+      insightId: subjectId,
+    });
+    expect(next.status).toBe(503); // already-member Theme is no longer a valid target
+  });
+  it("synthesis drafting never changes selection or writes before explicit approval; all selected lineage survives edits", async () => {
+    const provider = vi.fn(async () => ({
+      title: proposed.title,
+      summary: proposed.summary,
+      takeaways: [],
+      seeds: [],
+      seedRationale: [],
+    }));
+    await start(real({ draft: provider }));
+    const a = await approvedFixture(),
+      b = await approvedFixture(),
+      c = await approvedFixture();
+    const ids = [a.id, b.id];
+    const draft = await request("/api/assist/synthesis", { sourceIds: ids });
+    expect(draft.status).toBe(200);
+    expect((await db.query("SELECT * FROM insight_lineage")).rows).toHaveLength(
+      0,
+    );
+    expect(JSON.stringify(provider.mock.calls)).not.toContain(c.id);
+    const id = randomUUID(),
+      input = {
+        id,
+        ...proposed,
+        sourceIds: ids,
+        confirmed: true,
+        aiReceipt: draft.body.aiReceipt,
+      };
+    delete (input as Partial<typeof proposed>).themes;
+    expect(
+      (await request("/api/syntheses", { ...input, sourceIds: [a.id, c.id] }))
+        .status,
+    ).toBe(409);
+    expect((await request("/api/syntheses", input)).status).toBe(201);
+    expect((await request("/api/syntheses", input)).status).toBe(201);
+    expect(await store.library().get(id)).toMatchObject({
+      creationMethod: "ai_suggested",
+      seeds: [],
+    });
+    expect(
+      (await store.library().get(id)).synthesizedFrom.map((s) => s.id).sort(),
+    ).toEqual(ids.sort());
+    expect((await store.get(a.saved.id)).originalText).toBe(exact);
+    expect(
+      (await request("/api/assist/synthesis", { sourceIds: [a.id] })).status,
+    ).toBe(400);
+  });
+  it("accepts zero suggestions, rejects unknown/unapproved/foreign targets and invalid output, and writes nothing on provider failure", async () => {
+    let output: unknown = { connections: [], themes: [] };
+    await start(
+      real({
+        knowledge: async () => output as never,
+        draft: async () => {
+          throw Error("provider secret detail");
+        },
+      }),
+    );
+    const a = await approvedFixture();
+    expect(
+      (await request("/api/assist/knowledge", { insightId: a.id })).body,
+    ).toMatchObject({ connections: [], themes: [] });
+    output = {
+      connections: [
+        {
+          candidateId: randomUUID(),
+          relationship: "Related to",
+          direction: "outgoing",
+          rationale: "Unknown",
+        },
+      ],
+      themes: [],
+    };
+    expect(
+      (await request("/api/assist/knowledge", { insightId: a.id })).status,
+    ).toBe(503);
+    output = {
+      connections: [],
+      themes: [{ themeId: randomUUID(), rationale: "Invented" }],
+    };
+    expect(
+      (await request("/api/assist/knowledge", { insightId: a.id })).status,
+    ).toBe(503);
+    expect(
+      (await request("/api/assist/knowledge", { insightId: randomUUID() }))
+        .status,
+    ).toBe(404);
+    const b = await approvedFixture();
+    const failed = await request("/api/assist/synthesis", {
+      sourceIds: [a.id, b.id],
+    });
+    expect(failed.status).toBe(503);
+    expect(JSON.stringify(failed.body)).not.toContain("provider secret detail");
+    expect((await db.query("SELECT * FROM insight_lineage")).rows).toHaveLength(
+      0,
+    );
+    expect(await store.connections().list()).toHaveLength(0);
+  });
+  it("unavailable AI preserves all manual paths and returns no fabricated suggestions", async () => {
+    await start(createAssistant("unavailable"));
+    const a = await approvedFixture(),
+      b = await approvedFixture();
+    expect(
+      (await request("/api/assist/knowledge", { insightId: a.id })).status,
+    ).toBe(503);
+    expect(
+      (await request("/api/assist/synthesis", { sourceIds: [a.id, b.id] }))
+        .status,
+    ).toBe(503);
+    expect(await store.connections().list()).toHaveLength(0);
+    expect(
+      (
+        await request("/api/connections", {
+          id: randomUUID(),
+          insightA: a.id,
+          insightB: b.id,
+          relationship: "Related to",
+          confirmed: true,
+        })
+      ).status,
+    ).toBe(201);
+  });
+  it("uses the real adapter through HTTP with exact saved source and rejects foreign/unapproved context before calling AI", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "completed",
+          output: [
+            {
+              content: [
+                { type: "output_text", text: JSON.stringify(analysis) },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+    await start(
+      openAiAssistant({ key: "test-server-only-secret", fetch: transport }),
+    );
+    const saved = await save();
+    const result = await request("/api/assist", {
+      conversationId: saved.id,
+      source: { ...source, originalText: "Untrusted browser copy" },
+      comment: "User response is not external evidence",
+    });
+    expect(result.status).toBe(200);
+    const sent = JSON.parse(transport.mock.calls[0][1]?.body as string);
+    expect(JSON.parse(sent.input[0].content).source.originalText).toBe(exact);
+    expect(JSON.stringify(result.body)).not.toContain(
+      "test-server-only-secret",
+    );
+    const foreign = (
+      await db.query<{ id: string }>(
+        "INSERT INTO users DEFAULT VALUES RETURNING id",
+      )
+    ).rows[0].id;
+    const ids = (
+      await db.query<{ id: string }>(
+        "INSERT INTO insights(user_id,title,summary,creation_method,user_confirmed) VALUES($1,'Foreign approved','Do not send','user',true),($2,'Unapproved','Do not send','ai_suggested',false) RETURNING id",
+        [foreign, owner],
+      )
+    ).rows.map((i) => i.id);
+    for (const insightId of ids)
+      expect(
+        (await request("/api/assist/knowledge", { insightId })).status,
+      ).toBe(404);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(
+      (await db.query("SELECT * FROM insight_connections")).rows,
+    ).toHaveLength(0);
   });
 });

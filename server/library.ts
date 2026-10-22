@@ -6,7 +6,7 @@ import type {
   LibraryQuery,
 } from "../src/shared/library.ts";
 
-const columns = `i.id, i.title, i.summary, i.created_at AS "createdAt", i.favorite, EXISTS(SELECT 1 FROM insight_lineage l WHERE l.insight_id=i.id AND l.user_id=i.user_id) AS "isSynthesis",
+const columns = `i.creation_method AS "creationMethod", i.id, i.title, i.summary, i.created_at AS "createdAt", i.favorite, EXISTS(SELECT 1 FROM insight_lineage l WHERE l.insight_id=i.id AND l.user_id=i.user_id) AS "isSynthesis",
  ARRAY(SELECT seed FROM insight_seeds WHERE insight_id=i.id AND user_id=i.user_id ORDER BY seed) AS seeds,
  COALESCE((SELECT jsonb_agg(DISTINCT jsonb_build_object('name',p.name,'company',p.company))
    FROM insight_sources x JOIN source_conversations s ON s.id=x.conversation_id AND s.user_id=x.user_id

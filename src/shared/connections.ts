@@ -20,6 +20,7 @@ export const connectionInput = z
     insightB: uuid,
     relationship: z.enum(relationshipTypes),
     confirmed: z.literal(true),
+    aiReceipt: z.string().max(5000).optional(),
   })
   .strict()
   .refine(
@@ -38,6 +39,7 @@ export const synthesisInput = insightFields
         "Select distinct source Insights.",
       ),
     confirmed: z.literal(true),
+    aiReceipt: z.string().max(5000).optional(),
   })
   .strict();
 export type ConnectionInput = z.infer<typeof connectionInput>;
@@ -48,4 +50,5 @@ export type Connection = {
   insightB: string;
   relationship: (typeof relationshipTypes)[number];
   createdAt: string;
+  creationMethod?: "user" | "ai_suggested" | "ai_then_edited";
 };

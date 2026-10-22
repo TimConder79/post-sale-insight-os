@@ -1,6 +1,6 @@
 # Post-Sale Insight OS
 
-A single-user workspace for preserving manually supplied conversations and capturing approved learning. Read [AGENTS.md](AGENTS.md) and the canonical product documents before making changes. Phase 1 implements **Post Workspace**; Phase 2 adds the **Insights Library**; Phase 3 adds **Connections and manual Synthesis**; Phase 4 adds **Themes**. Other workflows remain placeholders.
+A single-user workspace for preserving manually supplied conversations and capturing approved learning. Read [AGENTS.md](AGENTS.md) and the canonical product documents before making changes. Phase 1 implements **Post Workspace**; Phase 2 adds the **Insights Library**; Phase 3 adds **Connections and manual Synthesis**; Phase 4 adds **Themes**; Phase 5A adds **real AI assistance with explicit approval**. Other workflows remain placeholders.
 
 ## Setup
 
@@ -38,7 +38,7 @@ All configuration is documented in `.env.example`:
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`      | Server-only PostgreSQL connection string; also used by migrations.                                                                                                                    |
 | `WORKSPACE_USER_ID` | One stable UUID for your local workspace. The server sets ownership; never accepted from the browser. Changing this UUID selects a different owner, so retain it to reopen your data. |
-| `AI_MODE`           | `unavailable` (default) or `stub` (explicit development preview). No real provider is integrated.                                                                                     |
+| `AI_MODE`           | `unavailable` (default), `openai` (real server-side provider), or `stub` (explicit development preview).                                                                              |
 | `PORT`              | API/production port, default 3001. Keep 3001 when using the supplied Vite dev proxy.                                                                                                  |
 | `APP_ORIGIN`        | Exact allowed development origin; default `http://127.0.0.1:5173`. Production same-origin requests are allowed automatically.                                                         |
 
@@ -54,7 +54,7 @@ This is a **local single-user API**, not a remotely authenticated service. The A
 4. Write a manual Insight or explicitly select the development proposal. Edit its title/summary and optional takeaways/seeds/themes. Nothing becomes durable knowledge until **Approve & save Insight** is clicked. Approval saves a distinct Insight plus `insight_sources` provenance, in a separate transaction from source capture.
 5. Refresh the conversation URL or use **Reopen saved conversations** to see the exact saved source, the latest explicitly saved response, optional person metadata and approved linked Insights. **New conversation** starts another source. No full Insights Library or Relationships workflow is implemented.
 
-Manual and development-preview approvals use `creation_method=user` and `user_confirmed=true`; the stub is not real AI, so it must not be attributed as AI-generated. Existing `ai_suggested`/`ai_then_edited` schema values remain intact for a future approved integration. Client-supplied creation methods and ownership are rejected.
+Manual and development-preview approvals use `creation_method=user` and `user_confirmed=true`; the stub is not real AI, so it must not be attributed as AI-generated. Real AI approvals use the existing `ai_suggested`/`ai_then_edited` values, derived by the server from signed proposal receipts. Client-supplied creation methods and ownership are rejected.
 
 Source saves and Insight approvals use client-generated IDs for safe retries; matching retries do not create duplicate records. A changed retry returns a conflict rather than pretending edits were saved. Failed assistance or persistence requests keep your current edits in the workspace. Analysis and unapproved Insights remain session-local. Responses persist only through **Save response**, including an intentional empty response to clear the saved text. Unsaved response edits are marked, and reload/close or workspace conversation switching warns before discarding them; browser history navigation does not autosave drafts. The latest explicit response save wins across tabs; no revision history is introduced. Save failures retain current edits and the previous durable response. Source and approved Insights cannot be overwritten through this Phase 1 API.
 
@@ -100,7 +100,21 @@ API: `GET/POST /api/themes`, `GET /api/themes/:id`, `POST /api/themes/:id/insigh
 - `POST /api/conversations/:id/insights`: `{ id, title, summary, takeaways, seeds, themes, confirmed: true }`.
 - `POST /api/assist`: source, optional saved conversation ID, current comment and revision mode; returns validated, unconfirmed suggestion fields. Saved-source requests use server-read source and approved linked knowledge rather than trusting client replacements.
 
-The provider-neutral `Assistant.run` boundary in `server/ai.ts` accepts exact source and approved linked knowledge, and returns seeds/themes with rationale, distinctions/questions, an editable comment and an Insight proposal. This PR contains only unavailable and deterministic-stub implementations. There is no production provider selection, HTTP adapter or API key setting. A future real provider must remain server-side, validate structured output, follow `AI-BEHAVIOR.md`'s grounding hierarchy, and retain explicit approval and trustworthy creation-method attribution without changing source or Insight domain records.
+The provider-neutral Assistant boundary in `server/ai.ts` supports exact-source analysis, approved-knowledge suggestions and synthesis drafting. The OpenAI adapter stays server-side and validates structured outputs; unavailable and explicit development-stub modes preserve manual operation. See the Phase 5A configuration and approval flow below.
+
+## Real AI assistance (Phase 5A)
+
+AI proposes. You decide. All manual workflows remain available with `AI_MODE=unavailable` (the default). For real assistance set server-only `AI_MODE=openai`, `OPENAI_API_KEY`, and optionally `OPENAI_MODEL` (default `gpt-4.1-mini`) in your untracked `.env` or shell environment, then restart the Node server. Never use `VITE_` for these values. With no key, openai mode becomes unavailable. The existing stub is development-only and never substitutes for a failed real request.
+
+The adapter calls the fixed OpenAI Responses endpoint using Node fetch and strict structured output, with no new SDK. The selected model must support Responses structured JSON schemas. It uses `store:false`, a 45-second timeout, a 120,000-character context ceiling and a bounded output. Configure provider access/billing locally; no credential is stored in the database or browser. Explicit AI requests send the current source or selected approved knowledge to the configured provider. Provider errors and invalid/refused output are sanitized; drafts and manual workflows remain available.
+
+- **Post Workspace:** save the exact source, then Analyze. Review an editable Insight proposal with optional Seeds/rationale. Use the proposal, edit as needed, then explicitly approve. Real response drafts are shown separately; **Use response draft** applies one to the editor, and **Save response** is still explicit. Source analysis does not create/assign Themes.
+- **Library detail:** expand **AI-assisted Connections & Themes** and request suggestions. Each candidate has rationale and direction (symmetric types remain undirected). Explicitly approve individual Connections or existing Theme associations. Zero proposals is valid. Approved owner-scoped context is limited to 20 candidate Insights and 20 Themes with up to five member Insights each; it is not exhaustive retrieval. Theme creation stays manual.
+- **Synthesis:** select two or more Insights, then optionally request an AI draft (up to 20 selected Insights per AI request). Sources remain visible and fixed. Applying the editable draft requires confirmation before replacing existing writing/Seeds. Explicit approval alone writes the new approved Insight and all original selected lineage. Manual synthesis remains unchanged.
+
+Server-issued approval receipts bind AI provenance to the original source or selected source set. The server derives AI-suggested/AI-then-edited attribution from the approved fields; it never trusts a browser creation method. Receipts expire after one hour or server restart. On expiry, edits remain: request a new proposal or explicitly **Continue as a manual draft**. Existing response/membership tables do not store AI attribution; transient proposal labels do not imply new durable metadata. No migration is needed and existing records are unchanged.
+
+Automated provider tests use controlled HTTP responses; browser AI fixtures test presentation and explicit approval while API tests verify signed receipts and real database transactions. No live provider credential is required for checks. After review, local real-use acceptance remains: analyze one existing real conversation, inspect/edit/approve its learning, review Connections and existing Theme suggestions (including Forecast Evidence), draft synthesis from two existing Insights, and verify no durable relationship/membership/synthesis appears until explicitly approved. These real records are never recreated in cloud fixtures.
 
 ## Database migrations
 
@@ -154,9 +168,9 @@ The Node server serves `dist/` and the same local API, including direct route lo
 - `src/connections/`: connection List, lazy Map, and manual synthesis.
 - `src/themes/`: manual Theme creation, overview/detail, and explicit membership.
 - `src/shared/`: credential-free request/output schemas and types.
-- `server/`: local API, PostgreSQL transactions and provider-neutral development assistant.
+- `server/`: local API, PostgreSQL transactions and provider-neutral Assistant boundary and server-only real provider adapter.
 - `database/`: additive SQL migrations and integrity tests.
 - `scripts/`: server-only migration tooling.
 - `e2e/`: real-browser acceptance checks against PostgreSQL.
 
-See [DECISIONS.md](DECISIONS.md) for material choices. Weekly Review, content generation, real AI and other later workflows remain deferred. The next slice requires review and explicit approval.
+See [DECISIONS.md](DECISIONS.md) for material choices. The mockup/Today redesign, Weekly Review, content generation and other later workflows remain deferred. The next slice requires review and explicit approval.

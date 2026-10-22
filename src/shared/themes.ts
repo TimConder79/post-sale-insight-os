@@ -22,6 +22,7 @@ export const themeAssociation = z
         "Select distinct Insights.",
       ),
     confirmed: z.literal(true),
+    aiReceipt: z.string().max(5000).optional(),
   })
   .strict();
 export type ThemeInput = z.infer<typeof createTheme>;

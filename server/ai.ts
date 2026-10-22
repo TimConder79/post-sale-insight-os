@@ -1,3 +1,5 @@
+import { openAiAssistant } from "./openai.ts";
+import type { AiDraft, KnowledgeSuggestions } from "../src/shared/ai.ts";
 import type {
   AnalysisRequest,
   ApprovedInsight,
@@ -5,15 +7,24 @@ import type {
 } from "../src/shared/workspace.ts";
 import { WorkspaceError } from "./store.ts";
 
-// Future providers implement this boundary; no real provider or network integration ships in Phase 1.
+// Provider-neutral boundary; all adapters stay server-side.
 export interface Assistant {
-  mode: "unavailable" | "stub";
+  mode: "unavailable" | "stub" | "openai";
+  draft?: (context: unknown) => Promise<AiDraft>;
+  knowledge?: (context: unknown) => Promise<KnowledgeSuggestions>;
   run(
     request: AnalysisRequest,
     approvedKnowledge: ApprovedInsight[],
   ): Promise<Suggestion>;
 }
 export function createAssistant(mode = "unavailable"): Assistant {
+  if (mode === "openai" && !process.env.OPENAI_API_KEY)
+    return createAssistant("unavailable");
+  if (mode === "openai")
+    return openAiAssistant({
+      key: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL,
+    });
   if (mode === "stub")
     return {
       mode: "stub",
@@ -47,7 +58,7 @@ export function createAssistant(mode = "unavailable"): Assistant {
       },
     };
   if (mode !== "unavailable")
-    throw new Error("Unknown AI_MODE. Use unavailable or stub.");
+    throw new Error("Unknown AI_MODE. Use unavailable, stub or openai.");
   return {
     mode: "unavailable",
     run: async () => {
